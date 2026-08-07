@@ -25,7 +25,7 @@ jobs:
 
       - name: Install validators
         run: |
-          pacman -Syu --noconfirm --needed bash shellcheck
+          pacman -Syu --noconfirm --needed bash shellcheck python3 jq
 
       - name: Validate profiledef.sh
         run: |
