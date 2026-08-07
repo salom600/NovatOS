@@ -163,18 +163,21 @@ jobs:
       # ----- Upload build logs (always, even on failure) -----
       - name: Upload build logs
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: build-logs-${{ github.run_id }}
+          # Only upload out/ (with the ISO) — the build/ dir contains files
+          # with colons in their names (ModemManager fcc-unlock.available.d/03f0:4e1d)
+          # which break GitHub Actions artifact uploads on NTFS-hostile paths.
           path: |
-            build/
             out/
           retention-days: 7
           if-no-files-found: ignore
 
       # ----- Publish to GitHub Releases -----
       - name: Publish to GitHub Releases
-        if: success() && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        if: always() && steps.build.outcome == 'success' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.build.outputs.iso_version }}-${{ github.run_number }}
@@ -200,10 +203,10 @@ jobs:
 
             ## Highlights
             - KDE Plasma 6 (Wayland)
-            - All GPU drivers (AMD, Intel, NVIDIA)
+            - All GPU drivers (AMD, Intel, NVIDIA open)
             - Steam + Proton + Lutris + Wine preinstalled
             - BIOS + UEFI hybrid boot
-            - Calamares installer with NovatOS branding
+            - archinstall installer (NovatOS-branded)
 
             ---
             Built by GitHub Actions. [View run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
