@@ -1,0 +1,203 @@
+name: Build NovatOS ISO
+
+on:
+  push:
+    branches: [main, master]
+    paths-ignore:
+      - 'README.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      debug_build:
+        description: 'Run with extra debugging output'
+        required: false
+        default: 'false'
+        type: choice
+        options: ['true', 'false']
+
+env:
+  ISO_NAME: novatos
+  PROFILE_DIR: archiso/novatos
+  ARTIFACT_RETENTION_DAYS: 14
+
+jobs:
+  build:
+    name: Build ISO (archlinux container)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    container:
+      image: archlinux:latest
+      options: --privileged --cap-add=SYS_ADMIN --device /dev/fuse
+
+    permissions:
+      contents: write   # required to publish GitHub Releases
+      actions: write    # required to trigger auto-fix workflow
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      # ----- Prepare container -----
+      - name: Prepare Arch container
+        run: |
+          set -euo pipefail
+          # Initialize pacman keyring
+          pacman-key --init
+          pacman-key --populate archlinux
+          # Install archiso + build deps
+          pacman -Syu --noconfirm --needed \
+              archiso \
+              git \
+              curl \
+              reflector \
+              bash \
+              ca-certificates \
+              dosfstools \
+              squashfs-tools \
+              lz4 \
+              zstd \
+              xorriso \
+              mtools \
+              grub \
+              edk2-ovmf
+          # Refresh mirrorlist for fastest downloads
+          reflector --protocol https --latest 30 --sort rate \
+                    --save /etc/pacman.d/mirrorlist --download-timeout 5 || true
+
+      - name: Show environment
+        run: |
+          echo "=== archiso version ==="
+          pacman -Q archiso
+          echo "=== profile ==="
+          ls -la "${PROFILE_DIR}/"
+          echo "=== profiledef ==="
+          cat "${PROFILE_DIR}/profiledef.sh"
+
+      # ----- Build -----
+      - name: Build ISO
+        id: build
+        run: |
+          set -euo pipefail
+          BUILD_DIR="$(pwd)/build"
+          OUT_DIR="$(pwd)/out"
+          mkdir -p "$BUILD_DIR" "$OUT_DIR"
+
+          echo "::group::mkarchiso output"
+          # Run mkarchiso — this is the heavy step (typically 15-40 min on CI)
+          mkarchiso -v -w "$BUILD_DIR" -o "$OUT_DIR" "${PROFILE_DIR}"
+          echo "::endgroup::"
+
+          # Find produced ISO
+          ISO_FILE="$(ls -1 "$OUT_DIR"/*.iso 2>/dev/null | head -1)"
+          if [ -z "$ISO_FILE" ]; then
+              echo "::error::No ISO produced in $OUT_DIR"
+              ls -la "$OUT_DIR"
+              exit 1
+          fi
+
+          # Extract version (YYYY.MM.DD from profiledef)
+          ISO_VERSION="$(date +%Y.%m.%d)"
+          ISO_BASENAME="$(basename "$ISO_FILE")"
+          ISO_SIZE="$(du -h "$ISO_FILE" | cut -f1)"
+          SHA256="$(sha256sum "$ISO_FILE" | cut -d' ' -f1)"
+
+          echo "iso_path=$ISO_FILE"               >> "$GITHUB_OUTPUT"
+          echo "iso_basename=$ISO_BASENAME"       >> "$GITHUB_OUTPUT"
+          echo "iso_version=$ISO_VERSION"         >> "$GITHUB_OUTPUT"
+          echo "iso_size=$ISO_SIZE"               >> "$GITHUB_OUTPUT"
+          echo "iso_sha256=$SHA256"               >> "$GITHUB_OUTPUT"
+
+          # Save sha256 next to the ISO
+          echo "$SHA256  $ISO_BASENAME" > "$OUT_DIR/$ISO_BASENAME.sha256sum"
+
+          echo "=== Build OK ==="
+          echo "ISO:  $ISO_BASENAME"
+          echo "Size: $ISO_SIZE"
+          echo "SHA:  $SHA256"
+
+      # ----- Upload artifact (always, even on PRs) -----
+      - name: Upload ISO artifact
+        if: always() && steps.build.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: novatos-iso-${{ steps.build.outputs.iso_version }}
+          path: |
+            out/*.iso
+            out/*.sha256sum
+          retention-days: ${{ env.ARTIFACT_RETENTION_DAYS }}
+          compression-level: 0   # ISOs are already compressed
+
+      # ----- Upload build logs (always, even on failure) -----
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs-${{ github.run_id }}
+          path: |
+            build/
+            out/
+          retention-days: 7
+          if-no-files-found: ignore
+
+      # ----- Publish to GitHub Releases -----
+      - name: Publish to GitHub Releases
+        if: success() && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.build.outputs.iso_version }}-${{ github.run_number }}
+          name: NovatOS ${{ steps.build.outputs.iso_version }} (Build #${{ github.run_number }})
+          body: |
+            # NovatOS Aurora — ${{ steps.build.outputs.iso_version }}
+
+            **Build #${{ github.run_number }}** · commit `${{ github.sha }}`
+
+            ## Download
+            - **File:** `${{ steps.build.outputs.iso_basename }}`
+            - **Size:** ${{ steps.build.outputs.iso_size }}
+            - **SHA256:** `${{ steps.build.outputs.iso_sha256 }}`
+
+            ## How to use
+            1. Download the `.iso` and the `.sha256sum` file.
+            2. Verify: `sha256sum -c novatos-*.iso.sha256sum`
+            3. Flash to USB:
+               - Linux: `sudo dd if=novatos-*.iso of=/dev/sdX bs=4M status=progress && sync`
+               - Or use [Ventoy](https://www.ventoy.net), [balenaEtcher](https://etcher.balena.io), or Rufus (DD mode).
+            4. Boot from USB. Choose **NovatOS Live**.
+            5. From the live desktop, double-click **Install NovatOS**.
+
+            ## Highlights
+            - KDE Plasma 6 (Wayland)
+            - All GPU drivers (AMD, Intel, NVIDIA)
+            - Steam + Proton + Lutris + Wine preinstalled
+            - BIOS + UEFI hybrid boot
+            - Calamares installer with NovatOS branding
+
+            ---
+            Built by GitHub Actions. [View run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          files: |
+            out/*.iso
+            out/*.sha256sum
+          draft: false
+          prerelease: false
+          fail_on_unmatched_files: true
+
+      # ----- Trigger auto-fix workflow on failure -----
+      - name: Notify auto-fix workflow
+        if: failure() && github.event_name != 'pull_request'
+        uses: peter-evans/workflow-dispatch@v3
+        with:
+          workflow: Auto-fix Build
+          ref: ${{ github.ref }}
+          inputs: |
+            {
+              "run_id": "${{ github.run_id }}",
+              "commit_sha": "${{ github.sha }}",
+              "branch": "${{ github.ref_name }}"
+            }

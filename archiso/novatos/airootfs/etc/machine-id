@@ -1,0 +1,2 @@
+# Empty machine-id is regenerated on first boot.
+# Required by systemd-networkd-wait-online and other services.

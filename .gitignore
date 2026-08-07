@@ -1,0 +1,20 @@
+# Build artifacts
+build/
+out/
+work/
+output/
+
+# Local config / caches
+*.swp
+*.swo
+*~
+.DS_Store
+__pycache__/
+*.pyc
+.idea/
+.vscode/
+
+# Branding source files
+/tmp/_novatos.svg
+logs/
+*.log

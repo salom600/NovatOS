@@ -1,0 +1,39 @@
+# NovatOS GRUB config — applied to installed system
+# (Live ISO uses syslinux/systemd-boot — this is for the post-install GRUB)
+
+# Default timeout
+GRUB_TIMEOUT=5
+GRUB_DEFAULT=saved
+GRUB_SAVEDEFAULT=true
+
+# Look for other OSes
+GRUB_DISABLE_OS_PROBER=false
+
+# Theme
+GRUB_THEME="/boot/grub/themes/novatos/theme.txt"
+
+# Linux command line
+GRUB_CMDLINE_LINUX_DEFAULT="quiet splash loglevel=3 rd.systemd.show_status=false rd.udev.log_level=3"
+GRUB_CMDLINE_LINUX=""
+
+# Don't show submenu
+GRUB_DISABLE_SUBMENU=y
+
+# Hidden timeout (show menu only if Shift pressed)
+GRUB_HIDDEN_TIMEOUT_QUIET=false
+
+# Resolution
+GRUB_GFXMODE=1920x1080,1280x1024,1024x768,auto
+GRUB_GFXPAYLOAD_LINUX=keep
+
+# Background color if theme fails
+GRUB_BACKGROUND="/boot/grub/themes/novatos/background.png"
+
+# Font
+GRUB_FONT="/boot/grub/fonts/unicode.pf2"
+
+# Disable recovery mode entry (saves space)
+GRUB_DISABLE_RECOVERY=true
+
+# Distro name shown in menu
+GRUB_DISTRIBUTOR="NovatOS"

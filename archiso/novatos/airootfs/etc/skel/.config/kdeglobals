@@ -1,0 +1,15 @@
+[$Version]
+2
+
+[General]
+ColorScheme=NovatOS-Aurora
+
+[KDE]
+LookAndFeelPackage=org.novatos.desktop
+WidgetStyle=Breeze
+LookAndFeelPackage=org.kde.breezedark.desktop
+SingleClick=false
+ShowDeleteCommand=true
+
+[Icons]
+Theme=breeze

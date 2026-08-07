@@ -1,0 +1,17 @@
+[$Version]
+2
+
+[General]
+LoginMode=defaultLogin
+ScreenCount=1
+
+[General]
+includeDesktops=false
+
+[BasicSettings]
+firstRun=false
+
+[Plugins]
+
+[Theme]
+Theme=current

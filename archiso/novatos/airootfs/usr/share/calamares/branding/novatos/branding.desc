@@ -1,0 +1,36 @@
+# NovatOS Calamares branding descriptor
+# =====================================
+componentName: novatos
+
+# This is the window title, also shown on the welcome page.
+strings:
+    productName:         NovatOS
+    shortProductName:    NovatOS
+    version:             2026 "Aurora"
+    shortVersion:        2026.1
+    slogan:              A modern, lightweight Linux for 2026
+    shortSlogan:         Modern. Light. Yours.
+    description:         NovatOS is an Arch-based distribution featuring KDE Plasma 6,
+                         one-click installs, full GPU support, and an integrated app store.
+    shortDescription:    Modern Arch + Plasma 6, built for 2026.
+
+# Images shown in Calamares (sized at build time by assets generator)
+images:
+    productLogo:         "logo.png"
+    productIcon:         "icon.png"
+    productWelcome:      "welcome.png"
+
+# Slideshow images shown during the long-running install steps
+slideshow:               "show.qml"
+slideshowAPI:            1
+
+# Style settings
+style:
+    sidebarBackground:    "#0F1117"
+    sidebarText:          "#FFFFFF"
+    sidebarTextSelect:    "#4CC2FF"
+    sidebarTextHover:     "#9DB7E0"
+
+# Background color of main window
+windowColor:             "#0F1117"
+windowSize:              "1024x680"

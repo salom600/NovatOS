@@ -1,0 +1,25 @@
+[$Version]
+2
+
+[Desktop]
+Color_0=29,33,46
+Color_1=29,33,46
+Color_2=29,33,46
+Color_Effect=0
+Ellipsis=false
+Font=Noto Sans,10,-1,5,400,0,0,0,0,0,0,0,0,0,0,1
+IconSize=4
+PaperColor=255,255,255
+ShadowEnabled=true
+ShowHidden=false
+TextColor=255,255,255
+Wallpaper=/usr/share/wallpapers/novatos/NovatOS-Aurora.png
+WallpaperMode=Scale
+
+[PreviewSettings]
+MaximumLocalSize=10485760
+MaximumRemoteSize=0
+UseFile Thumbnails=true
+
+[Wallpaper]
+Plugin=org.kde.image

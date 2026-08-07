@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+#
+# /usr/local/bin/novatos-welcome
+# ===============================
+# Graphical welcome app shown on first login.
+# Provides: Install, Mirror Refresh, GPU Info, Updates, First-run setup.
+#
+# Uses kdialog for native Plasma look & feel.
+#
+set -euo pipefail
+
+if ! command -v kdialog >/dev/null 2>&1; then
+    exec xterm -e "echo 'kdialog not found'; read"
+fi
+
+while true; do
+    CHOICE=$(kdialog --title "Welcome to NovatOS" --menu \
+        "Welcome to NovatOS 2026 'Aurora'
+
+A modern, lightweight Arch-based distribution featuring KDE Plasma 6.
+
+What would you like to do?" \
+        install   "Install NovatOS to disk (Calamares)" \
+        mirror    "Refresh pacman mirrors" \
+        gpu       "Show GPU & driver info" \
+        update    "Update all packages" \
+        firstrun  "Run first-run setup (AUR, Flathub, drivers)" \
+        shell     "Open Konsole terminal" \
+        about     "About NovatOS" \
+        quit      "Close" 2>&1) || break
+
+    case "$CHOICE" in
+        install)
+            pkexec calamares || kdialog --error "Calamares failed to launch"
+            ;;
+        mirror)
+            konsole -e sudo novatos-mirror-refresh || \
+                kdialog --error "Mirror refresh failed"
+            ;;
+        gpu)
+            konsole -e novatos-gpu-info
+            ;;
+        update)
+            konsole -e sudo pacman -Syu
+            ;;
+        firstrun)
+            konsole -e sudo novatos-first-run
+            ;;
+        shell)
+            konsole &
+            ;;
+        about)
+            kdialog --title "About NovatOS" --msgbox \
+                "NovatOS 2026 'Aurora'
+
+Built on Arch Linux with KDE Plasma 6.
+
+Features:
+  • Modern Plasma 6 desktop (Wayland)
+  • One-click Calamares installer
+  • All GPU drivers (AMD, Intel, NVIDIA)
+  • Steam + Proton + Lutris + Wine for gaming
+  • Discover + Flatpak + AUR (via paru) app store
+  • Live USB + BIOS/UEFI hybrid boot
+  • Built-in virtualization (virt-manager, docker)
+
+Project: https://github.com/salom600/NovatOS"
+            ;;
+        quit|"")
+            break
+            ;;
+    esac
+done

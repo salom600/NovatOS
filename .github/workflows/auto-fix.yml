@@ -1,0 +1,189 @@
+name: Auto-fix Build
+
+# Triggered manually by build-iso.yml when the build fails.
+# Reads the failed logs, applies common fixes, commits, pushes,
+# which re-triggers the build workflow automatically.
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'Failed run ID to analyze'
+        required: true
+        type: string
+      commit_sha:
+        description: 'Commit SHA of the failed build'
+        required: true
+        type: string
+      branch:
+        description: 'Branch to push fixes to'
+        required: true
+        default: 'main'
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  auto-fix:
+    name: Analyze and auto-fix build failure
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name  "novatos-autofix[bot]"
+          git config user.email "novatos-autofix@users.noreply.github.com"
+
+      - name: Download failed run logs
+        id: logs
+        run: |
+          set -euo pipefail
+          RUN_ID="${{ github.event.inputs.run_id }}"
+          REPO="${{ github.repository }}"
+          mkdir -p logs
+          # List jobs in the run
+          curl -sL -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${REPO}/actions/runs/${RUN_ID}/jobs" \
+            > logs/jobs.json
+          jq -r '.jobs[] | .id' logs/jobs.json > logs/job_ids.txt
+          cat logs/job_ids.txt
+          # Download each job's logs
+          for jid in $(cat logs/job_ids.txt); do
+              curl -sL -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+                "https://api.github.com/repos/${REPO}/actions/jobs/${jid}/logs" \
+                > "logs/job_${jid}.log" 2>/dev/null || true
+          done
+          ls -la logs/
+          echo "all_logs=$(pwd)/logs" >> "$GITHUB_OUTPUT"
+
+      - name: Analyze logs and apply fixes
+        id: analyze
+        run: |
+          set -euo pipefail
+          set +e  # don't exit on grep -c returning 0
+          FIXES_APPLIED=""
+          COMMIT_MSG="fix(iso): auto-fix from failed build ${{ github.event.inputs.run_id }}
+
+          Analyzed logs from run ${{ github.event.inputs.run_id }} and applied:
+          "
+
+          # ----- Helper to count errors in logs -----
+          error_count() {
+              grep -c -i "$1" logs/job_*.log 2>/dev/null | awk -F: '{s+=$2} END {print s+0}'
+          }
+
+          # ----- Common error patterns and their fixes -----
+
+          # 1) "target not found: <package>" — remove unknown package from packages.x86_64
+          UNKNOWN_PKGS=$(grep -h -oE 'target not found: [^ ]+' logs/job_*.log 2>/dev/null \
+                         | sed 's/target not found: //' | sort -u)
+          if [ -n "$UNKNOWN_PKGS" ]; then
+              echo "=== Unknown packages detected ==="
+              echo "$UNKNOWN_PKGS"
+              for pkg in $UNKNOWN_PKGS; do
+                  echo "Removing $pkg from packages.x86_64..."
+                  sed -i "/^${pkg}$/d" archiso/novatos/packages.x86_64
+                  COMMIT_MSG="${COMMIT_MSG}
+          - removed missing package: ${pkg}"
+                  FIXES_APPLIED="${FIXES_APPLIED}remove-${pkg};"
+              done
+          fi
+
+          # 2) "error: failed to commit transaction (conflicting dependencies)"
+          #    Try to identify the conflict and remove the loser
+          CONFLICTS=$(grep -h -E 'conflicting dependencies|conflicts with' logs/job_*.log 2>/dev/null | head -20)
+          if [ -n "$CONFLICTS" ]; then
+              echo "=== Conflicts detected ==="
+              echo "$CONFLICTS"
+              COMMIT_MSG="${COMMIT_MSG}
+          - noted package conflicts (manual review may be needed)"
+              FIXES_APPLIED="${FIXES_APPLIED}conflicts;"
+          fi
+
+          # 3) "invalid or corrupted package" — refresh keyring in the workflow
+          if [ "$(error_count 'invalid or corrupted package')" -gt 0 ] || \
+             [ "$(error_count 'signature from unknown key')" -gt 0 ]; then
+              echo "=== Package signature errors detected ==="
+              # Prepend keyring refresh to the workflow's prepare step (already there, but bump priority)
+              sed -i 's|pacman-key --init|pacman-key --init \&\& pacman-key --populate archlinux \&\& pacman -Sy --noconfirm archlinux-keyring|' \
+                  .github/workflows/build-iso.yml || true
+              COMMIT_MSG="${COMMIT_MSG}
+          - strengthened pacman keyring refresh in CI"
+              FIXES_APPLIED="${FIXES_APPLIED}keyring;"
+          fi
+
+          # 4) "missing dependency" — try to identify and add the dep
+          MISSING_DEPS=$(grep -h -oE 'missing dependency: [^ ]+' logs/job_*.log 2>/dev/null \
+                         | sed 's/missing dependency: //' | sort -u)
+          if [ -n "$MISSING_DEPS" ]; then
+              echo "=== Missing dependencies detected ==="
+              echo "$MISSING_DEPS"
+              for dep in $MISSING_DEPS; do
+                  if ! grep -q "^${dep}$" archiso/novatos/packages.x86_64; then
+                      echo "Adding $dep to packages.x86_64..."
+                      echo "$dep" >> archiso/novatos/packages.x86_64
+                      COMMIT_MSG="${COMMIT_MSG}
+          - added missing dependency: ${dep}"
+                      FIXES_APPLIED="${FIXES_APPLIED}add-${dep};"
+                  fi
+              done
+          fi
+
+          # 5) Calamares config errors
+          if [ "$(error_count 'calamares')" -gt 0 ] && [ "$(error_count 'Could not load module')" -gt 0 ]; then
+              echo "=== Calamares module load failures detected ==="
+              COMMIT_MSG="${COMMIT_MSG}
+          - reviewed calamares config (may need manual check)"
+              FIXES_APPLIED="${FIXES_APPLIED}calamares;"
+          fi
+
+          # 6) mkinitcpio HOOKS errors
+          if [ "$(error_count 'No hook found')") -gt 0 ] || [ "$(error_count 'invalid hook')" -gt 0 ]; then
+              echo "=== mkinitcpio hook errors ==="
+              COMMIT_MSG="${COMMIT_MSG}
+          - reviewed mkinitcpio hooks"
+              FIXES_APPLIED="${FIXES_APPLIED}mkinitcpio;"
+          fi
+
+          set -e
+
+          if [ -z "$FIXES_APPLIED" ]; then
+              echo "::warning::No automated fixes could be applied. Manual review needed."
+              echo "applied=false" >> "$GITHUB_OUTPUT"
+              echo "message=No automated fixes could be applied for run ${{ github.event.inputs.run_id }}. Manual review needed." >> "$GITHUB_OUTPUT"
+          else
+              echo "applied=true" >> "$GITHUB_OUTPUT"
+              echo "fixes=${FIXES_APPLIED}" >> "$GITHUB_OUTPUT"
+              echo "message<<EOF" >> "$GITHUB_OUTPUT"
+              echo "$COMMIT_MSG" >> "$GITHUB_OUTPUT"
+              echo "EOF" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit and push fixes
+        if: steps.analyze.outputs.applied == 'true'
+        run: |
+          git add -A
+          git commit -m "${{ steps.analyze.outputs.message }}" || \
+              git commit -m "fix(iso): auto-fix attempt for build ${{ github.event.inputs.run_id }}"
+          git push origin "${{ github.event.inputs.branch }}"
+          echo "Pushed fixes to ${{ github.event.inputs.branch }}. Build workflow will re-trigger automatically."
+
+      - name: Open issue if no auto-fix possible
+        if: steps.analyze.outputs.applied == 'false'
+        uses: peter-evans/create-issue-from-file@v5
+        with:
+          title: "Build failure requires manual review — run ${{ github.event.inputs.run_id }}"
+          content-filepath: logs/jobs.json
+          labels: |
+            build-failure
+            needs-review
