@@ -74,14 +74,41 @@ jobs:
         run: |
           # shellcheck disable=SC1090
           source archiso/novatos/profiledef.sh
-          for var in iso_name iso_label iso_version iso_install_dir arch pacman_conf airootfs_dir; do
+          # NOTE: archiso 89+ uses `install_dir` (not `iso_install_dir`)
+          for var in iso_name iso_label iso_version install_dir arch pacman_conf airootfs_dir; do
               if [ -z "${!var:-}" ]; then
                   echo "::error::profiledef.sh: $var is not set"
                   exit 1
               fi
               echo "  $var = ${!var}"
           done
+          # Also warn if the old variable name is used
+          if [ -n "${iso_install_dir:-}" ]; then
+              echo "::error::profiledef.sh: uses deprecated 'iso_install_dir' — rename to 'install_dir' (archiso 89+)"
+              exit 1
+          fi
           echo "profiledef.sh OK"
+
+      - name: Check archiso.conf drop-in exists
+        run: |
+          if [ ! -f archiso/novatos/airootfs/etc/mkinitcpio.conf.d/archiso.conf ]; then
+              echo "::error::Missing /etc/mkinitcpio.conf.d/archiso.conf — initramfs won't have the archiso live-boot hook!"
+              exit 1
+          fi
+          # Verify it contains the archiso hook
+          if ! grep -q 'archiso' archiso/novatos/airootfs/etc/mkinitcpio.conf.d/archiso.conf; then
+              echo "::error::archiso.conf drop-in doesn't contain the 'archiso' hook"
+              exit 1
+          fi
+          echo "archiso.conf drop-in OK"
+
+      - name: Check mkinitcpio-archiso in package list
+        run: |
+          if ! grep -q '^mkinitcpio-archiso$' archiso/novatos/packages.x86_64; then
+              echo "::error::mkinitcpio-archiso not in packages.x86_64 — live-boot hooks won't be available!"
+              exit 1
+          fi
+          echo "mkinitcpio-archiso found in package list"
 
       - name: Check archinstall config (replaces Calamares)
         run: |
