@@ -67,7 +67,7 @@ openconnect
 openvpn
 wireguard-tools
 
-# ---------- Audio ----------
+# ---------- Audio (PipeWire stack — pulseaudio is replaced by pipewire-pulse) ----------
 pipewire
 pipewire-alsa
 pipewire-jack
@@ -75,9 +75,6 @@ pipewire-pulse
 pipewire-v4l2
 pipewire-audio
 wireplumber
-pulseaudio
-pulseaudio-alsa
-pulseaudio-bluetooth
 sof-firmware
 alsa-firmware
 alsa-utils
@@ -224,13 +221,13 @@ libva-utils
 vdpauinfo
 glxinfo
 mesa-demos
+# NVIDIA open kernel modules — pick ONE: nvidia-open (precompiled for linux/linux-zen)
+# OR nvidia-open-dkms (compiles against any kernel). We use the precompiled one.
 nvidia-open
-nvidia-open-dkms
 nvidia-utils
 nvidia-settings
 nvidia-prime
 lib32-nvidia-utils
-lib32-opencl-nvidia
 
 # ---------- Input devices ----------
 xf86-input-libinput

@@ -83,13 +83,18 @@ jobs:
           done
           echo "profiledef.sh OK"
 
-      - name: Check Calamares config
+      - name: Check archinstall config (replaces Calamares)
         run: |
-          if [ ! -f archiso/novatos/airootfs/etc/calamares/settings.conf ]; then
-              echo "::error::Calamares settings.conf missing"
+          if [ ! -f archiso/novatos/airootfs/etc/novatos/archinstall-user-configuration.json ]; then
+              echo "::error::archinstall config missing"
               exit 1
           fi
-          echo "Calamares settings.conf present"
+          # Validate it parses as JSON
+          python3 -c "import json; json.load(open('archiso/novatos/airootfs/etc/novatos/archinstall-user-configuration.json'))" || {
+              echo "::error::archinstall config is not valid JSON"
+              exit 1
+          }
+          echo "archinstall config OK"
 
       - name: Check branding files
         run: |
