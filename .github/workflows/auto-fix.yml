@@ -169,11 +169,47 @@ jobs:
 
           # 8) archiso "is not a valid boot mode" — sanitize bootmodes to known-good set
           if [ "$(error_count 'is not a valid boot mode')" -gt 0 ]; then
-              echo "=== archiso invalid boot mode detected — resetting to defaults ==="
-              sed -i "/^bootmodes=/c bootmodes=('bios.syslinux.mbr' 'bios.syslinux.eltorito' 'uefi-x64.systemd-boot.esp' 'uefi-x64.systemd-boot.eltorito')" archiso/novatos/profiledef.sh
+              echo "=== archiso invalid boot mode detected — resetting to v89 defaults ==="
+              sed -i "/^bootmodes=/c bootmodes=('bios.syslinux' 'uefi.systemd-boot')" archiso/novatos/profiledef.sh
               COMMIT_MSG="${COMMIT_MSG}
-          - reset bootmodes to archiso defaults"
+          - reset bootmodes to archiso 89 defaults (bios.syslinux + uefi.systemd-boot)"
               FIXES_APPLIED="${FIXES_APPLIED}bootmodes-reset;"
+          fi
+
+          # 8b) UEFI emergency shell ("device '' not found") — missing archiso hook
+          if [ "$(error_count "device '' not found")" -gt 0 ] || \
+             [ "$(error_count 'Failed to mount')" -gt 0 ] || \
+             [ "$(error_count 'emergency shell')" -gt 0 ]; then
+              echo "=== Live boot failure detected (missing archiso hook?) ==="
+              # Ensure mkinitcpio-archiso is in the package list
+              if ! grep -q '^mkinitcpio-archiso$' archiso/novatos/packages.x86_64; then
+                  echo "mkinitcpio-archiso" >> archiso/novatos/packages.x86_64
+                  COMMIT_MSG="${COMMIT_MSG}
+          - added mkinitcpio-archiso package (provides archiso initramfs hook)"
+                  FIXES_APPLIED="${FIXES_APPLIED}add-mkinitcpio-archiso;"
+              fi
+              # Ensure the archiso.conf drop-in exists
+              if [ ! -f archiso/novatos/airootfs/etc/mkinitcpio.conf.d/archiso.conf ]; then
+                  mkdir -p archiso/novatos/airootfs/etc/mkinitcpio.conf.d
+                  printf 'HOOKS=(base udev microcode modconf kms memdisk archiso archiso_loop_mnt archiso_pxe_common archiso_pxe_nbd archiso_pxe_http archiso_pxe_nfs block filesystems keyboard)\nCOMPRESSION="xz"\nCOMPRESSION_OPTIONS=(-9e)\n' \
+                      > archiso/novatos/airootfs/etc/mkinitcpio.conf.d/archiso.conf
+                  COMMIT_MSG="${COMMIT_MSG}
+          - created /etc/mkinitcpio.conf.d/archiso.conf drop-in with live-boot hooks"
+                  FIXES_APPLIED="${FIXES_APPLIED}create-archiso-conf;"
+              fi
+          fi
+
+          # 8c) "Failed to load COM32 file" — wrong install_dir (falling back to mkarchiso)
+          if [ "$(error_count 'Failed to load COM32')" -gt 0 ] || \
+             [ "$(error_count '/mkarchiso/')" -gt 0 ]; then
+              echo "=== Wrong install_dir detected (falling back to 'mkarchiso') ==="
+              # Fix: rename iso_install_dir to install_dir in profiledef.sh
+              if grep -q '^iso_install_dir=' archiso/novatos/profiledef.sh; then
+                  sed -i 's/^iso_install_dir=/install_dir=/' archiso/novatos/profiledef.sh
+                  COMMIT_MSG="${COMMIT_MSG}
+          - renamed iso_install_dir to install_dir in profiledef.sh (archiso 89+)"
+                  FIXES_APPLIED="${FIXES_APPLIED}fix-install-dir;"
+              fi
           fi
 
           # 9) "profiledef.sh: line N: ..." syntax errors — try bash -n to verify

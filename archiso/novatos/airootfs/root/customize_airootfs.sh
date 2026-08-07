@@ -92,14 +92,15 @@ DeviceTimeout=8
 EOF
 
 # ---------- mkinitcpio ----------
-# NOTE: The profile-level mkinitcpio.conf (archiso/novatos/mkinitcpio.conf) is
-# automatically copied to /etc/mkinitcpio.conf by archiso BEFORE this script runs.
-# It already contains the correct HOOKS including the critical `archiso` hook.
+# The profile provides two mkinitcpio config files:
+#   1. archiso/novatos/mkinitcpio.conf → /etc/mkinitcpio.conf (base MODULES, empty HOOKS)
+#   2. airootfs/etc/mkinitcpio.conf.d/archiso.conf → HOOKS with `archiso` live-boot hook
 #
-# We DO NOT overwrite it here — overwriting with wrong HOOKS (missing `archiso`)
-# was the root cause of the UEFI emergency shell bug ("device '' not found").
-# archiso will build the initramfs using /etc/mkinitcpio.conf after this script.
-echo "==> [NovatOS] mkinitcpio.conf is provided by the profile (includes archiso hook)"
+# The drop-in (archiso.conf) overrides HOOKS with the full live-boot hook list
+# including `archiso`, `archiso_loop_mnt`, `archiso_pxe_*`, etc.
+#
+# We do NOT touch mkinitcpio config here — the profile's files are correct.
+echo "==> [NovatOS] mkinitcpio configured via profile (archiso.conf drop-in with live-boot hooks)"
 
 # ---------- pacman init ----------
 echo "==> [NovatOS] Initializing pacman keyring..."

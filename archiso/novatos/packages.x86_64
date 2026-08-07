@@ -28,8 +28,16 @@ pacman-contrib
 reflector
 haveged
 
-# ---------- CRITICAL: archiso package (provides live-boot initramfs hook) ----------
+# ---------- CRITICAL: archiso + mkinitcpio-archiso (provides live-boot initramfs hooks) ----------
+# `archiso` = the build tool (also provides runtime files)
+# `mkinitcpio-archiso` = the initramfs hooks (archiso, archiso_loop_mnt, archiso_pxe_*)
+# `mkinitcpio-nfs-utils` = NFS boot support (needed by archiso_pxe_nfs hook)
+# `nbd` = network block device (needed by archiso_pxe_nbd hook)
+# Without these, the initramfs CANNOT boot as a live system!
 archiso
+mkinitcpio-archiso
+mkinitcpio-nfs-utils
+nbd
 
 # ---------- Filesystem / storage ----------
 btrfs-progs
