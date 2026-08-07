@@ -31,7 +31,7 @@ What would you like to do?" \
 
     case "$CHOICE" in
         install)
-            pkexec calamares || kdialog --error "Calamares failed to launch"
+            konsole -e sudo novatos-installer
             ;;
         mirror)
             konsole -e sudo novatos-mirror-refresh || \

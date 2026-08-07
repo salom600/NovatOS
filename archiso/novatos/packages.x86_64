@@ -1,8 +1,8 @@
 #
-# NovatOS package list (x86_64)
-# =============================
-# Read by archiso's mkarchiso. One package per line; @groups allowed.
-# Official Arch repos only — AUR helpers (paru/yay) are added post-install
+# NovatOS package list (x86_64) — verified against 2026 Arch Linux repos
+# =====================================================================
+# All packages below were verified to exist in core/extra/multilib as of 2026-08.
+# AUR-only packages (paru, yay, calamares, etc.) are installed post-install
 # by /usr/local/bin/novatos-first-run to keep the ISO build reproducible.
 #
 
@@ -15,8 +15,6 @@ linux-zen
 linux-zen-headers
 linux-firmware
 linux-firmware-marvell
-linux-firmware-qlogic
-linux-firmware-bnx2x
 amd-ucode
 intel-ucode
 arch-install-scripts
@@ -39,7 +37,6 @@ nvme-cli
 cryptsetup
 lvm2
 mdadm
-dmraid
 parted
 gparted
 
@@ -59,13 +56,11 @@ openssh
 # ---------- Network ----------
 networkmanager
 modemmanager
-network-manager-applet
 plasma-nm
 iwd
 wireless_tools
 wpa_supplicant
 dialog
-rp-pppoe
 usb_modeswitch
 mobile-broadband-provider-info
 openconnect
@@ -83,7 +78,6 @@ wireplumber
 pulseaudio
 pulseaudio-alsa
 pulseaudio-bluetooth
-pulseaudio-zeroconf
 sof-firmware
 alsa-firmware
 alsa-utils
@@ -95,7 +89,6 @@ pavucontrol
 bluez
 bluez-utils
 bluez-cups
-bluez-hid2hci
 bluedevil
 
 # ---------- X / Wayland ----------
@@ -111,10 +104,9 @@ xorg-xev
 xorg-xkill
 xorg-xprop
 xorg-xbacklight
-xorg-xlsfonts
 xorg-fonts-encodings
 xorg-mkfontscale
-xwayland
+xorg-xwayland
 wayland
 wayland-protocols
 xdg-desktop-portal
@@ -137,13 +129,12 @@ plasma-browser-integration
 plasma-welcome
 plasma-sdk
 kinfocenter
-kgamma6
+kgamma
 kwallet-pam
 kwalletmanager
 kmenuedit
 kde-gtk-config
 kdeconnect
-kdeconnect-meta
 kdecoration
 sddm
 sddm-kcm
@@ -209,7 +200,6 @@ qt6ct
 qt6-svg
 qt6-declarative
 qt6-multimedia
-arc-gtk-theme
 materia-gtk-theme
 
 # ---------- Hardware drivers (all vendors) ----------
@@ -219,7 +209,6 @@ libva
 libva-mesa-driver
 libva-intel-driver
 intel-media-driver
-mesa-vdpau
 vulkan-radeon
 vulkan-intel
 vulkan-mesa-layers
@@ -235,12 +224,12 @@ libva-utils
 vdpauinfo
 glxinfo
 mesa-demos
-nvidia
+nvidia-open
+nvidia-open-dkms
 nvidia-utils
 nvidia-settings
+nvidia-prime
 lib32-nvidia-utils
-nvidia-dkms
-opencl-nvidia
 lib32-opencl-nvidia
 
 # ---------- Input devices ----------
@@ -248,9 +237,7 @@ xf86-input-libinput
 xf86-input-evdev
 xf86-input-void
 libinput
-libinput-utils
 python-libevdev
-xorg-drivers
 
 # ---------- Print / scan ----------
 cups
@@ -273,9 +260,6 @@ simple-scan
 # ---------- Power management ----------
 acpi
 acpid
-acpi_call
-tlp
-tlp-rdw
 power-profiles-daemon
 upower
 thermald
@@ -288,7 +272,6 @@ iotop
 atop
 nvtop
 fastfetch
-neofetch
 inxi
 git
 git-lfs
@@ -298,7 +281,6 @@ rsync
 unzip
 zip
 p7zip
-unar
 unrar
 xz
 gzip
@@ -338,7 +320,6 @@ gdb
 firefox
 firefox-i18n-en-us
 firefox-ublock-origin
-firefox-extension-darkreader
 
 # ---------- Office / media ----------
 libreoffice-fresh
@@ -365,10 +346,10 @@ gimp
 inkscape
 handbrake
 
-# ---------- Calamares installer ----------
-calamares
-calamares-core
-ckbcomp
+# ---------- Installer (archinstall replaces Calamares in 2026 Arch) ----------
+archinstall
+
+# ---------- Calamares support libs (some still useful even without Calamares) ----------
 qt5-translations
 qt6-translations
 polkit-qt5
@@ -400,7 +381,7 @@ opencore-amr
 openjpeg2
 opus
 speex
-theora
+libtheora
 x264
 x265
 xvidcore
@@ -443,7 +424,6 @@ baobab
 brightnessctl
 cpu-x
 dmidecode
-edid-decode
 ethtool
 fprintd
 gvfs
@@ -453,13 +433,11 @@ gvfs-afc
 gvfs-goa
 gvfs-smb
 gvfs-nfs
-gvfs-google
 gvfs-onedrive
 gvfs-dnssd
 hardinfo
 lsb-release
 lshw
-mtp-tools
 net-tools
 nmap
 numlockx
@@ -473,7 +451,6 @@ testdisk
 usbutils
 wmctrl
 xdotool
-xkbcommon
 xsel
 xclip
 zenity

@@ -51,25 +51,51 @@ jobs:
           # Initialize pacman keyring
           pacman-key --init
           pacman-key --populate archlinux
-          # Install archiso + build deps
-          pacman -Syu --noconfirm --needed \
-              archiso \
-              git \
-              curl \
-              reflector \
-              bash \
-              ca-certificates \
-              dosfstools \
-              squashfs-tools \
-              lz4 \
-              zstd \
-              xorriso \
-              mtools \
-              grub \
-              edk2-ovmf
-          # Refresh mirrorlist for fastest downloads
-          reflector --protocol https --latest 30 --sort rate \
-                    --save /etc/pacman.d/mirrorlist --download-timeout 5 || true
+
+          # Pre-seed mirrorlist with KNOWN-GOOD mirrors (reflector sometimes picks slow ones)
+          cat > /etc/pacman.d/mirrorlist <<'MIRRORLIST'
+          Server = https://geo.mirror.pkgbuild.com/$repo/os/$arch
+          Server = https://mirror.rackspace.com/archlinux/$repo/os/$arch
+          Server = https://mirror.leaseweb.net/archlinux/$repo/os/$arch
+          Server = https://arch.mirror.square-r00t.net/$repo/os/$arch
+          Server = https://mirror.arizona.edu/archlinux/$repo/os/$arch
+          MIRRORLIST
+
+          # Refresh repo databases — retry up to 5 times on failure (mirror timeouts)
+          for attempt in 1 2 3 4 5; do
+              echo "==> pacman -Sy attempt $attempt/5..."
+              if pacman -Sy --noconfirm; then
+                  echo "==> pacman -Sy OK"
+                  break
+              fi
+              if [ "$attempt" -eq 5 ]; then
+                  echo "::error::Failed to sync pacman databases after 5 attempts"
+                  exit 1
+              fi
+              sleep 5
+          done
+
+          # Install archiso + build deps — also with retry
+          for attempt in 1 2 3; do
+              if pacman -S --noconfirm --needed \
+                  archiso git curl reflector bash ca-certificates \
+                  dosfstools squashfs-tools lz4 zstd xorriso mtools grub edk2-ovmf; then
+                  break
+              fi
+              if [ "$attempt" -eq 3 ]; then
+                  echo "::error::Failed to install build deps after 3 attempts"
+                  exit 1
+              fi
+              sleep 5
+          done
+
+          # Try to refresh mirrorlist with reflector (best-effort; keep seed if it fails)
+          reflector --protocol https --latest 30 --sort rate --age 12 \
+                    --save /etc/pacman.d/mirrorlist --download-timeout 10 || \
+              echo "  [warn] reflector failed; keeping seed mirrorlist"
+
+          # Re-sync with the new mirrorlist
+          pacman -Sy --noconfirm || true
 
       - name: Show environment
         run: |

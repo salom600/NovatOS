@@ -209,18 +209,18 @@ PS1='\[\e[1;36m\]\u@\h\[\e[0m\] \[\e[1;34m\]\w\[\e[0m\] \$ '
 command -v fastfetch >/dev/null && [ -z "$NOVATOS_NOBANNER" ] && fastfetch
 EOF
 
-# ---------- Welcome desktop entry (Install NovatOS) ----------
+# ---------- Welcome desktop entry (Install NovatOS via archinstall) ----------
 mkdir -p /etc/skel/Desktop
 cat > /etc/skel/Desktop/novatos-install.desktop <<'EOF'
 [Desktop Entry]
 Type=Application
 Name=Install NovatOS
 Name[ar]=تثبيت NovatOS
-Comment=Launch the NovatOS system installer
+Comment=Launch the NovatOS system installer (archinstall)
 Comment[ar]=ابدأ مثبت نظام NovatOS
 Icon=novatos-installer
-Exec=sudo calamares
-Terminal=false
+Exec=sudo novatos-installer
+Terminal=true
 Categories=System;
 StartupNotify=true
 EOF

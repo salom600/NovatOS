@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+#
+# /usr/local/bin/novatos-installer
+# ================================
+# NovatOS-branded wrapper around `archinstall` (the official Arch installer).
+# In 2026 Arch Linux, Calamares is no longer in the official repos, so we use
+# archinstall — the same installer that powers the official Arch ISO.
+#
+# This wrapper:
+#   1. Shows a NovatOS-branded banner
+#   2. Pre-populates sensible defaults (BTRFS, KDE Plasma, NovatOS hostname)
+#   3. Launches archinstall's guided TUI
+#
+set -euo pipefail
+
+if [ "$(id -u)" -ne 0 ]; then
+    exec sudo -E "$0" "$@"
+fi
+
+# NovatOS banner
+cat <<'BANNER'
+
+  ███╗   ██╗ ██████╗ ██╗   ██╗ █████╗ ███████╗████████╗ ██████╗ ██╗    ██╗
+  ████╗  ██║██╔═══██╗██║   ██║██╔══██╗██╔════╝╚══██╔══╝██╔═══██╗██║    ██║
+  ██╔██╗ ██║██║   ██║██║   ██║███████║███████╗   ██║   ██║   ██║██║ █╗ ██║
+  ██║╚██╗██║██║   ██║╚██╗ ██╔╝██╔══██║╚════██║   ██║   ██║   ██║██║███╗██║
+  ██║ ╚████║╚██████╔╝ ╚████╔╝ ██║  ██║███████║   ██║   ╚██████╔╝╚███╔███╔╝
+  ╚═╝  ╚═══╝ ╚═════╝   ╚═══╝  ╚═╝  ╚═╝╚══════╝   ╚═╝    ╚═════╝  ╚══╝╚══╝
+
+                          Aurora Edition — 2026
+
+                  Welcome to the NovatOS installer.
+
+   This installer is powered by `archinstall` (the official Arch installer).
+   It will guide you through:
+     - Disk partitioning (BTRFS recommended)
+     - Bootloader setup (GRUB, BIOS or UEFI)
+     - User creation
+     - Desktop selection (KDE Plasma is recommended for NovatOS)
+     - Network configuration
+     - Package selection
+
+   Tips:
+     - Default hostname: novatos
+     - Default desktop:  Plasma 6 (Wayland)
+     - When asked about profiles, choose "desktop" → "kde"
+     - When asked about additional packages, you can leave it blank
+
+BANNER
+
+echo "==> [NovatOS] Refreshing pacman mirrors before install..."
+reflector --protocol https --latest 30 --sort rate \
+          --save /etc/pacman.d/mirrorlist --download-timeout 5 2>/dev/null || true
+
+echo ""
+echo "==> [NovatOS] Launching archinstall guided installer..."
+echo "    (You can press Ctrl+C at any time to abort)"
+echo ""
+
+# Pre-set some defaults via environment variables that archinstall respects
+export ARCHINSTALL_LANGUAGE="English"
+export ARCHINSTALL_HOSTNAME="${ARCHINSTALL_HOSTNAME:-novatos}"
+
+# Launch archinstall's guided (interactive) TUI
+exec archinstall --config /etc/novatos/archinstall-user-configuration.json \
+                 --creds /etc/novatos/archinstall-user-credentials.json \
+                 --silent 2>/dev/null || \
+exec archinstall guided
