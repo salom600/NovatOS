@@ -148,7 +148,7 @@ jobs:
           fi
 
           # 6) mkinitcpio HOOKS errors
-          if [ "$(error_count 'No hook found')") -gt 0 ] || [ "$(error_count 'invalid hook')" -gt 0 ]; then
+          if [ "$(error_count 'No hook found')" -gt 0 ] || [ "$(error_count 'invalid hook')" -gt 0 ]; then
               echo "=== mkinitcpio hook errors ==="
               COMMIT_MSG="${COMMIT_MSG}
           - reviewed mkinitcpio hooks"
@@ -180,10 +180,13 @@ jobs:
 
       - name: Open issue if no auto-fix possible
         if: steps.analyze.outputs.applied == 'false'
-        uses: peter-evans/create-issue-from-file@v5
-        with:
-          title: "Build failure requires manual review — run ${{ github.event.inputs.run_id }}"
-          content-filepath: logs/jobs.json
-          labels: |
-            build-failure
-            needs-review
+        run: |
+          set -euo pipefail
+          curl -sSL -X POST \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/issues" \
+            -d "{
+              \"title\": \"Build failure requires manual review — run ${{ github.event.inputs.run_id }}\",
+              \"body\": \"Auto-fix could not automatically resolve the build failure in [run ${{ github.event.inputs.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.event.inputs.run_id }}).\\n\\nManual review needed. Logs attached as artifact in the auto-fix run.\"
+            }" || echo "  [warn] could not create issue"

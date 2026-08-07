@@ -49,7 +49,8 @@ jobs:
       - name: Check for duplicate packages
         run: |
           cd archiso/novatos
-          dups=$(sort packages.x86_64 | uniq -d)
+          # Strip comments and blank lines, then look for dups
+          dups=$(grep -vE '^#|^$' packages.x86_64 | sort | uniq -d)
           if [ -n "$dups" ]; then
               echo "::error::Duplicate packages found:"
               echo "$dups"

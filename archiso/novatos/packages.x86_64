@@ -128,7 +128,6 @@ plasma-desktop
 plasma-workspace
 plasma-workspace-wallpapers
 plasma-pa
-plasma-nm
 plasma-disks
 plasma-firewall
 plasma-systemmonitor
@@ -464,7 +463,6 @@ mtp-tools
 net-tools
 nmap
 numlockx
-p7zip
 pv
 python-pip
 python-pyqt5
