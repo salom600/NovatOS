@@ -114,7 +114,6 @@ xorg-xbacklight
 xorg-xlsfonts
 xorg-fonts-encodings
 xorg-mkfontscale
-xwayland
 wayland
 wayland-protocols
 xdg-desktop-portal
@@ -137,13 +136,11 @@ plasma-browser-integration
 plasma-welcome
 plasma-sdk
 kinfocenter
-kgamma6
 kwallet-pam
 kwalletmanager
 kmenuedit
 kde-gtk-config
 kdeconnect
-kdeconnect-meta
 kdecoration
 sddm
 sddm-kcm
@@ -209,7 +206,6 @@ qt6ct
 qt6-svg
 qt6-declarative
 qt6-multimedia
-arc-gtk-theme
 materia-gtk-theme
 
 # ---------- Hardware drivers (all vendors) ----------
@@ -219,7 +215,6 @@ libva
 libva-mesa-driver
 libva-intel-driver
 intel-media-driver
-mesa-vdpau
 vulkan-radeon
 vulkan-intel
 vulkan-mesa-layers
@@ -235,7 +230,6 @@ libva-utils
 vdpauinfo
 glxinfo
 mesa-demos
-nvidia
 nvidia-utils
 nvidia-settings
 lib32-nvidia-utils
@@ -248,7 +242,6 @@ xf86-input-libinput
 xf86-input-evdev
 xf86-input-void
 libinput
-libinput-utils
 python-libevdev
 xorg-drivers
 
@@ -288,7 +281,6 @@ iotop
 atop
 nvtop
 fastfetch
-neofetch
 inxi
 git
 git-lfs
@@ -298,7 +290,6 @@ rsync
 unzip
 zip
 p7zip
-unar
 unrar
 xz
 gzip
@@ -338,7 +329,6 @@ gdb
 firefox
 firefox-i18n-en-us
 firefox-ublock-origin
-firefox-extension-darkreader
 
 # ---------- Office / media ----------
 libreoffice-fresh
@@ -366,9 +356,6 @@ inkscape
 handbrake
 
 # ---------- Calamares installer ----------
-calamares
-calamares-core
-ckbcomp
 qt5-translations
 qt6-translations
 polkit-qt5
@@ -400,7 +387,6 @@ opencore-amr
 openjpeg2
 opus
 speex
-theora
 x264
 x265
 xvidcore
@@ -443,7 +429,6 @@ baobab
 brightnessctl
 cpu-x
 dmidecode
-edid-decode
 ethtool
 fprintd
 gvfs
@@ -453,13 +438,11 @@ gvfs-afc
 gvfs-goa
 gvfs-smb
 gvfs-nfs
-gvfs-google
 gvfs-onedrive
 gvfs-dnssd
 hardinfo
 lsb-release
 lshw
-mtp-tools
 net-tools
 nmap
 numlockx
@@ -473,7 +456,6 @@ testdisk
 usbutils
 wmctrl
 xdotool
-xkbcommon
 xsel
 xclip
 zenity
