@@ -14,10 +14,8 @@ iso_version="$(date +%Y.%m.%d)"
 iso_install_dir="novatos"
 build_date="$(date +%Y-%m-%d)"
 
-# Boot modes (BIOS + UEFI + UEFI secure boot fallback)
-buildmodes=('bios' 'uefi')
-
-# Bootloaders
+# Bootloaders (BIOS + UEFI hybrid ISO)
+# NOTE: archiso 89+ removed the `buildmodes` array — only `bootmodes` is valid.
 bootmodes=('bios.syslinux.mbr' 'bios.syslinux.eltorito'
            'uefi-x64.systemd-boot.esp'
            'uefi-x64.systemd-boot.eltorito')

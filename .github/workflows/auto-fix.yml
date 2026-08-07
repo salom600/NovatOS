@@ -24,6 +24,7 @@ on:
 permissions:
   contents: write
   actions: read
+  issues: write
 
 jobs:
   auto-fix:
@@ -153,6 +154,48 @@ jobs:
               COMMIT_MSG="${COMMIT_MSG}
           - reviewed mkinitcpio hooks"
               FIXES_APPLIED="${FIXES_APPLIED}mkinitcpio;"
+          fi
+
+          # 7) archiso "is not a valid build mode" — remove buildmodes array from profiledef.sh
+          if [ "$(error_count 'is not a valid build mode')" -gt 0 ]; then
+              echo "=== archiso invalid build mode detected — removing buildmodes ==="
+              if grep -q '^buildmodes=' archiso/novatos/profiledef.sh; then
+                  sed -i '/^buildmodes=/d' archiso/novatos/profiledef.sh
+                  COMMIT_MSG="${COMMIT_MSG}
+          - removed deprecated 'buildmodes' array from profiledef.sh (archiso 89+)"
+                  FIXES_APPLIED="${FIXES_APPLIED}buildmodes-removed;"
+              fi
+          fi
+
+          # 8) archiso "is not a valid boot mode" — sanitize bootmodes to known-good set
+          if [ "$(error_count 'is not a valid boot mode')" -gt 0 ]; then
+              echo "=== archiso invalid boot mode detected — resetting to defaults ==="
+              cat > /tmp/bootmodes_fix.py <<'PYEOF'
+import re, pathlib
+p = pathlib.Path("archiso/novatos/profiledef.sh")
+s = p.read_text()
+new = re.sub(
+    r"bootmodes=\([^)]*\)",
+    "bootmodes=('bios.syslinux.mbr' 'bios.syslinux.eltorito' 'uefi-x64.systemd-boot.esp' 'uefi-x64.systemd-boot.eltorito')",
+    s, count=1, flags=re.S
+)
+if new != s:
+    p.write_text(new)
+    print("bootmodes reset to defaults")
+PYEOF
+              python3 /tmp/bootmodes_fix.py || \
+                  sed -i "/^bootmodes=/c bootmodes=('bios.syslinux.mbr' 'bios.syslinux.eltorito' 'uefi-x64.systemd-boot.esp' 'uefi-x64.systemd-boot.eltorito')" archiso/novatos/profiledef.sh
+              COMMIT_MSG="${COMMIT_MSG}
+          - reset bootmodes to archiso defaults"
+              FIXES_APPLIED="${FIXES_APPLIED}bootmodes-reset;"
+          fi
+
+          # 9) "profiledef.sh: line N: ..." syntax errors — try bash -n to verify
+          if [ "$(error_count 'profiledef.sh:')" -gt 0 ] || [ "$(error_count 'profiledef.sh line')" -gt 0 ]; then
+              echo "=== profiledef.sh syntax errors detected ==="
+              COMMIT_MSG="${COMMIT_MSG}
+          - noted profiledef.sh syntax issue (manual review)"
+              FIXES_APPLIED="${FIXES_APPLIED}profiledef-syntax;"
           fi
 
           set -e
