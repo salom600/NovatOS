@@ -43,10 +43,14 @@ published to the [Releases](https://github.com/salom600/NovatOS/releases) page.
 
 Get the latest build from [Releases](https://github.com/salom600/NovatOS/releases).
 
-### 2. Verify
+GitHub Releases has a 2GB-per-asset limit, so the ISO is split into ~1.9GB chunks.
+Download ALL `.iso.partNN` files plus the `.sha256sum` and `.README.txt` to one folder.
+
+### 2. Reassemble
 
 ```bash
-sha256sum -c novatos-*.iso.sha256sum
+cat novatos-*.iso.part* > novatos-YYYY.MM.DD-x86_64.iso
+sha256sum -c novatos-*.sha256sum   # verify integrity
 ```
 
 ### 3. Flash to USB
@@ -65,8 +69,9 @@ The live desktop auto-logs in as user `novatos` (password `novatos`).
 
 ### 5. Install
 
-From the live desktop, double-click **Install NovatOS** to launch Calamares.
-The installer walks you through disk partitioning, user creation, and locale.
+From the live desktop, double-click **Install NovatOS**.
+This launches the NovatOS-branded `archinstall` wrapper (the official Arch
+installer — Calamares was removed from Arch official repos in 2026).
 
 ---
 
