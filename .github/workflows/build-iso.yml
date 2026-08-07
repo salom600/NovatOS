@@ -175,6 +175,47 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
+      # ----- Split ISO into chunks for GitHub Releases (each asset must be < 2GB) -----
+      - name: Split ISO for release
+        if: always() && steps.build.outcome == 'success' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        id: split
+        run: |
+            set -euo pipefail
+            cd out
+            ISO_FILE="$(ls -1 *.iso | head -1)"
+            ISO_BASENAME="$(basename "$ISO_FILE" .iso)"
+            echo "Splitting $ISO_FILE into 1.9GB chunks..."
+            # Split into 1.9GB chunks (GitHub Releases asset limit is 2GB)
+            split -b 1900M -d -a 2 "$ISO_FILE" "${ISO_BASENAME}.iso.part"
+            # Generate reassembly instructions + manifest
+            cat > "${ISO_BASENAME}.README.txt" <<EOF
+            NovatOS ISO — Reassembly Instructions
+            =====================================
+
+            This ISO was split into multiple chunks because GitHub Releases
+            has a 2GB-per-asset limit. To reassemble:
+
+            1. Download ALL .iso.partNN files (e.g. .iso.part00, .iso.part01, ...)
+               and this README.txt to the same directory.
+            2. Concatenate them back into a single ISO:
+                  cat ${ISO_BASENAME}.iso.part* > ${ISO_BASENAME}.iso
+            3. Verify the SHA256 matches:
+                  sha256sum ${ISO_BASENAME}.iso
+               Expected: ${{ steps.build.outputs.iso_sha256 }}
+            4. Flash the ISO to a USB drive:
+                  sudo dd if=${ISO_BASENAME}.iso of=/dev/sdX bs=4M status=progress && sync
+               Or use Ventoy / balenaEtcher / Rufus (DD mode).
+            5. Boot from the USB. Choose "NovatOS Live".
+
+            Total size: ${{ steps.build.outputs.iso_size }}
+            SHA256:     ${{ steps.build.outputs.iso_sha256 }}
+            EOF
+            # Generate per-chunk sha256 for verification
+            sha256sum ${ISO_BASENAME}.iso.part* > "${ISO_BASENAME}.sha256sum"
+            sha256sum "$ISO_FILE" >> "${ISO_BASENAME}.sha256sum"
+            ls -la
+            echo "chunk_count=$(ls -1 ${ISO_BASENAME}.iso.part* | wc -l)" >> "$GITHUB_OUTPUT"
+
       # ----- Publish to GitHub Releases -----
       - name: Publish to GitHub Releases
         if: always() && steps.build.outcome == 'success' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
@@ -187,19 +228,29 @@ jobs:
 
             **Build #${{ github.run_number }}** · commit `${{ github.sha }}`
 
-            ## Download
-            - **File:** `${{ steps.build.outputs.iso_basename }}`
-            - **Size:** ${{ steps.build.outputs.iso_size }}
+            ## Download (split into chunks — see README)
+            GitHub Releases has a 2GB-per-asset limit, so the ISO is split into
+            ${{ steps.split.outputs.chunk_count }} chunks of ~1.9GB each.
+
+            - **Original file:** `${{ steps.build.outputs.iso_basename }}`
+            - **Total size:** ${{ steps.build.outputs.iso_size }}
             - **SHA256:** `${{ steps.build.outputs.iso_sha256 }}`
 
-            ## How to use
-            1. Download the `.iso` and the `.sha256sum` file.
-            2. Verify: `sha256sum -c novatos-*.iso.sha256sum`
-            3. Flash to USB:
-               - Linux: `sudo dd if=novatos-*.iso of=/dev/sdX bs=4M status=progress && sync`
-               - Or use [Ventoy](https://www.ventoy.net), [balenaEtcher](https://etcher.balena.io), or Rufus (DD mode).
-            4. Boot from USB. Choose **NovatOS Live**.
-            5. From the live desktop, double-click **Install NovatOS**.
+            ### Reassembly
+            ```bash
+            # Download all .iso.partNN files + README.txt + .sha256sum to one directory.
+            cat novatos-*.iso.part* > novatos-${{ steps.build.outputs.iso_version }}-x86_64.iso
+            sha256sum -c novatos-*.sha256sum
+            ```
+
+            ### Flash to USB
+            ```bash
+            sudo dd if=novatos-*.iso of=/dev/sdX bs=4M status=progress && sync
+            ```
+            Or use [Ventoy](https://www.ventoy.net), [balenaEtcher](https://etcher.balena.io), or Rufus (DD mode).
+
+            ### Boot
+            Boot from USB → choose **NovatOS Live** → double-click **Install NovatOS**.
 
             ## Highlights
             - KDE Plasma 6 (Wayland)
@@ -211,8 +262,9 @@ jobs:
             ---
             Built by GitHub Actions. [View run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
           files: |
-            out/*.iso
+            out/*.iso.part*
             out/*.sha256sum
+            out/*.README.txt
           draft: false
           prerelease: false
           fail_on_unmatched_files: true
