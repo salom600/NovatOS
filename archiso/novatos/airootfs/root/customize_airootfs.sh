@@ -92,19 +92,14 @@ DeviceTimeout=8
 EOF
 
 # ---------- mkinitcpio ----------
-echo "==> [NovatOS] Configuring mkinitcpio..."
-cat > /etc/mkinitcpio.conf <<'EOF'
-MODULES=(vmd nvme ahci sd_mod usb_storage uas btrfs ext4 vfat exfat overlay)
-BINARIES=()
-FILES=()
-HOOKS=(base udev modconf kms keyboard keymap consolefont block filesystems fsck)
-COMPRESSION="zstd"
-COMPRESSION_OPTIONS=(-T0 -19)
-EOF
-
-# Regenerate initramfs for both kernels
-echo "==> [NovatOS] Regenerating initramfs..."
-mkinitcpio -P || echo "  [warn] mkinitcpio regen failed"
+# NOTE: The profile-level mkinitcpio.conf (archiso/novatos/mkinitcpio.conf) is
+# automatically copied to /etc/mkinitcpio.conf by archiso BEFORE this script runs.
+# It already contains the correct HOOKS including the critical `archiso` hook.
+#
+# We DO NOT overwrite it here — overwriting with wrong HOOKS (missing `archiso`)
+# was the root cause of the UEFI emergency shell bug ("device '' not found").
+# archiso will build the initramfs using /etc/mkinitcpio.conf after this script.
+echo "==> [NovatOS] mkinitcpio.conf is provided by the profile (includes archiso hook)"
 
 # ---------- pacman init ----------
 echo "==> [NovatOS] Initializing pacman keyring..."

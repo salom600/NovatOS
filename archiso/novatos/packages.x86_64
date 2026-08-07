@@ -1,18 +1,23 @@
 #
-# NovatOS package list (x86_64) — verified against 2026 Arch Linux repos
-# =====================================================================
-# All packages below were verified to exist in core/extra/multilib as of 2026-08.
-# AUR-only packages (paru, yay, calamares, etc.) are installed post-install
-# by /usr/local/bin/novatos-first-run to keep the ISO build reproducible.
+# NovatOS package list (x86_64) — Lean Edition
+# =============================================
+# All packages verified against 2026 Arch Linux repos.
+# Heavy creative/office/VM tools removed — users install via Discover post-install.
+#
+# Design goals:
+#   - Modern Plasma 6 desktop (Wayland)
+#   - All GPU drivers (AMD, Intel, NVIDIA open)
+#   - Gaming-ready (Steam + Proton + Wine)
+#   - VM guest tools (VMware + VirtualBox) for testing
+#   - BIOS + UEFI hybrid boot
+#   - Target ISO size: ~3-3.5 GB (down from 6.5 GB)
 #
 
 # ---------- Base system ----------
 base
 base-devel
 linux
-linux-headers
 linux-zen
-linux-zen-headers
 linux-firmware
 linux-firmware-marvell
 amd-ucode
@@ -22,6 +27,9 @@ pacman
 pacman-contrib
 reflector
 haveged
+
+# ---------- CRITICAL: archiso package (provides live-boot initramfs hook) ----------
+archiso
 
 # ---------- Filesystem / storage ----------
 btrfs-progs
@@ -38,7 +46,6 @@ cryptsetup
 lvm2
 mdadm
 parted
-gparted
 
 # ---------- Bootloader / ISO ----------
 grub
@@ -67,7 +74,7 @@ openconnect
 openvpn
 wireguard-tools
 
-# ---------- Audio (PipeWire stack — pulseaudio is replaced by pipewire-pulse) ----------
+# ---------- Audio (PipeWire stack) ----------
 pipewire
 pipewire-alsa
 pipewire-jack
@@ -143,7 +150,7 @@ oxygen-icons
 oxygen-sounds
 kded
 
-# ---------- KDE applications ----------
+# ---------- KDE applications (core only) ----------
 dolphin
 dolphin-plugins
 konsole
@@ -151,45 +158,26 @@ kate
 kwrite
 kcalc
 ark
-filelight
 gwenview
 spectacle
 okular
-kolourpaint
-kdegraphics-thumbnailers
-kdenlive
-elisa
-dragon
 kfind
 khelpcenter
-kmag
-kmousetool
-kmouth
-ktorrent
-krdc
-krusader
 yakuake
 
-# ---------- Discover (app store) ----------
+# ---------- Discover (app store — users install heavy apps from here) ----------
 discover
 packagekit-qt6
 archlinux-appstream-data
 flatpak
 fwupd
 
-# ---------- Themes / fonts / icons ----------
+# ---------- Themes / fonts / icons (lean — removed CJK fonts to save ~300MB) ----------
 noto-fonts
-noto-fonts-cjk
 noto-fonts-emoji
 ttf-dejavu
 ttf-liberation
-ttf-droid
-ttf-roboto
 gnu-free-fonts
-adobe-source-sans-fonts
-adobe-source-code-pro-fonts
-adobe-source-han-sans-cn-fonts
-adobe-source-han-serif-cn-fonts
 papirus-icon-theme
 kvantum
 qt5ct
@@ -199,7 +187,7 @@ qt6-declarative
 qt6-multimedia
 materia-gtk-theme
 
-# ---------- Hardware drivers (all vendors) ----------
+# ---------- Hardware drivers (all vendors — user requirement) ----------
 mesa
 libglvnd
 libva
@@ -221,8 +209,7 @@ libva-utils
 vdpauinfo
 glxinfo
 mesa-demos
-# NVIDIA open kernel modules — pick ONE: nvidia-open (precompiled for linux/linux-zen)
-# OR nvidia-open-dkms (compiles against any kernel). We use the precompiled one.
+# NVIDIA open kernel modules (precompiled for linux + linux-zen)
 nvidia-open
 nvidia-utils
 nvidia-settings
@@ -236,18 +223,12 @@ xf86-input-void
 libinput
 python-libevdev
 
-# ---------- Print / scan ----------
+# ---------- Print / scan (lean — removed foomatic DBs) ----------
 cups
-cups-pdf
 cups-filters
 cups-pk-helper
 system-config-printer
 print-manager
-foomatic-db-engine
-foomatic-db
-foomatic-db-ppds
-foomatic-db-nonfree
-foomatic-db-nonfree-ppds
 ghostscript
 gsfonts
 sane
@@ -262,16 +243,16 @@ upower
 thermald
 cpupower
 
-# ---------- System tools ----------
+# ---------- VM guest tools (for VMware/VirtualBox/QEMU testing) ----------
+open-vm-tools
+virtualbox-guest-utils
+
+# ---------- System tools (lean) ----------
 htop
 btop
-iotop
-atop
-nvtop
 fastfetch
 inxi
 git
-git-lfs
 wget
 curl
 rsync
@@ -280,27 +261,19 @@ zip
 p7zip
 unrar
 xz
-gzip
-bzip2
 zstd
-lz4
 tree
 which
 file
 less
 vim
 nano
-micro
 bat
-exa
 fd
 ripgrep
 fzf
 tmux
-screen
 man-db
-man-pages
-texinfo
 diffutils
 patch
 make
@@ -308,24 +281,14 @@ gcc
 pkgconf
 cmake
 ninja
-strace
-ltrace
 lsof
-gdb
 
-# ---------- Browsers ----------
+# ---------- Browser ----------
 firefox
 firefox-i18n-en-us
 firefox-ublock-origin
 
-# ---------- Office / media ----------
-libreoffice-fresh
-libreoffice-fresh-en-gb
-hunspell
-hunspell-en_US
-hunspell-en_GB
-aspell
-aspell-en
+# ---------- Media playback (lean — removed kdenlive, obs, krita, gimp, etc.) ----------
 vlc
 mpv
 ffmpeg
@@ -336,23 +299,15 @@ gst-plugins-bad
 gst-plugins-ugly
 gst-libav
 gst-plugin-pipewire
-audacity
-obs-studio
-krita
-gimp
-inkscape
-handbrake
 
-# ---------- Installer (archinstall replaces Calamares in 2026 Arch) ----------
+# ---------- Installer ----------
 archinstall
-
-# ---------- Calamares support libs (some still useful even without Calamares) ----------
 qt5-translations
 qt6-translations
 polkit-qt5
 polkit-qt6
 
-# ---------- Gaming ----------
+# ---------- Gaming (kept — user requirement) ----------
 steam
 gamemode
 lib32-gamemode
@@ -364,17 +319,14 @@ wine-gecko
 wine-mono
 winetricks
 protontricks
-retroarch
-mgba-sdl
 
-# ---------- Codecs ----------
+# ---------- Codecs (lean — removed rare ones) ----------
 aom
 dav1d
 faac
 faad2
 flac
 lame
-opencore-amr
 openjpeg2
 opus
 speex
@@ -384,24 +336,8 @@ x265
 xvidcore
 libvorbis
 libvpx
-libdvdcss
-libdvdnav
-libdvdread
 
-# ---------- Virtualization / containers ----------
-qemu-desktop
-libvirt
-virt-manager
-dnsmasq
-edk2-ovmf
-swtpm
-docker
-docker-compose
-podman
-buildah
-distrobox
-
-# ---------- Security ----------
+# ---------- Security (lean — kept firewall, removed AV/rootkit scanner) ----------
 ufw
 gufw
 firewalld
@@ -409,17 +345,11 @@ firewall-config
 gnome-keyring
 libsecret
 seahorse
-fail2ban
-rkhunter
-clamav
-clamtk
 
-# ---------- Misc utilities ----------
+# ---------- Misc utilities (lean) ----------
 appstream
 appstream-qt
-baobab
 brightnessctl
-cpu-x
 dmidecode
 ethtool
 fprintd
@@ -427,24 +357,16 @@ gvfs
 gvfs-mtp
 gvfs-gphoto2
 gvfs-afc
-gvfs-goa
 gvfs-smb
 gvfs-nfs
-gvfs-onedrive
-gvfs-dnssd
-hardinfo
 lsb-release
-lshw
 net-tools
-nmap
 numlockx
 pv
 python-pip
 python-pyqt5
 python-pyqt6
-solaar
 sshfs
-testdisk
 usbutils
 wmctrl
 xdotool
