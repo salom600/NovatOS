@@ -124,8 +124,9 @@ jobs:
           # Check for the bug that caused "Error preparing initrd: Not found":
           # UEFI entries must NOT reference separate intel-ucode.img / amd-ucode.img
           # because the `microcode` hook bundles microcode INTO the main initramfs.
-          if grep -rE 'intel-ucode\.img|amd-ucode\.img' archiso/novatos/efiboot/loader/entries/; then
-              echo "::error::UEFI entries reference separate ucode .img files — these don't exist on the ESP (microcode is bundled in initramfs). Remove the intel-ucode.img / amd-ucode.img initrd lines."
+          # Only check actual `initrd` lines (not comments that mention these files).
+          if grep -rE '^\s*initrd\s+.*intel-ucode\.img|^\s*initrd\s+.*amd-ucode\.img' archiso/novatos/efiboot/loader/entries/; then
+              echo "::error::UEFI entries reference separate ucode .img files in initrd lines — these don't exist on the ESP (microcode is bundled in initramfs). Remove the intel-ucode.img / amd-ucode.img initrd lines."
               exit 1
           fi
           # UEFI entries must use %ARCH% placeholder (not hardcoded x86_64)
@@ -140,9 +141,9 @@ jobs:
                   exit 1
               fi
           done
-          # Same ucode check for syslinux
-          if grep -rE 'intel-ucode\.img|amd-ucode\.img' archiso/novatos/syslinux/; then
-              echo "::error::Syslinux configs reference separate ucode .img files — these don't exist (microcode is bundled in initramfs)."
+          # Same ucode check for syslinux (only INITRD lines, not comments)
+          if grep -rE '^\s*INITRD\s+.*intel-ucode\.img|^\s*INITRD\s+.*amd-ucode\.img' archiso/novatos/syslinux/; then
+              echo "::error::Syslinux configs reference separate ucode .img files in INITRD lines — these don't exist (microcode is bundled in initramfs)."
               exit 1
           fi
           # splash.png must exist (archiso copies it to /boot/syslinux/)
