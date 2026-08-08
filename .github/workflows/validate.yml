@@ -121,6 +121,14 @@ jobs:
               echo "::error::No UEFI boot entries in efiboot/loader/entries/"
               exit 1
           fi
+          # Each UEFI entry file must contain exactly ONE title (systemd-boot: 1 entry per file)
+          for f in archiso/novatos/efiboot/loader/entries/*.conf; do
+              title_count=$(grep -cE '^title\s' "$f" || true)
+              if [ "$title_count" -gt 1 ]; then
+                  echo "::error::$(basename $f) has $title_count 'title' lines — systemd-boot requires ONE entry per file"
+                  exit 1
+              fi
+          done
           # Check for the bug that caused "Error preparing initrd: Not found":
           # UEFI entries must NOT reference separate intel-ucode.img / amd-ucode.img
           # because the `microcode` hook bundles microcode INTO the main initramfs.

@@ -17,6 +17,7 @@
 base
 base-devel
 linux
+linux-lts
 linux-zen
 linux-firmware
 linux-firmware-marvell
@@ -126,7 +127,7 @@ xdg-desktop-portal-kde
 xdg-utils
 qt6-wayland
 
-# ---------- KDE Plasma 6 desktop ----------
+# ---------- KDE Plasma 6 desktop (default, ~600-800MB RAM) ----------
 plasma
 plasma-desktop
 plasma-workspace
@@ -157,6 +158,24 @@ oxygen
 oxygen-icons
 oxygen-sounds
 kded
+
+# ---------- Lightweight desktop alternative: Hyprland (~200-300MB RAM) ----------
+# Modern Wayland compositor with animations, blur, and a sleek aesthetic.
+# Selected at the SDDM login screen → "Hyprland" session.
+# Ideal for older hardware (2009+) or users who want maximum performance.
+hyprland
+foot
+wofi
+waybar
+sway
+swaybg
+swaylock
+swayidle
+kanshi
+mako
+polkit-kde-agent
+
+# ---------- X11 fallback for Hyprland/Sway (needed for some apps) ----------
 
 # ---------- KDE applications (core only) ----------
 dolphin
