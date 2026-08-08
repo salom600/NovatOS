@@ -212,6 +212,35 @@ jobs:
               fi
           fi
 
+          # 8d) "Error preparing initrd: Not found" — UEFI entries reference
+          # separate intel-ucode.img / amd-ucode.img that don't exist on ESP
+          # (because `microcode` hook bundles them into the main initramfs).
+          if [ "$(error_count 'Error preparing initrd')" -gt 0 ] || \
+             [ "$(error_count 'initrd.*Not found')" -gt 0 ] || \
+             [ "$(error_count 'Not found.*initrd')" -gt 0 ]; then
+              echo "=== 'Error preparing initrd: Not found' detected ==="
+              # Remove intel-ucode.img / amd-ucode.img initrd lines from UEFI entries
+              for f in archiso/novatos/efiboot/loader/entries/*.conf; do
+                  [ -f "$f" ] || continue
+                  if grep -qE 'intel-ucode\.img|amd-ucode\.img' "$f"; then
+                      sed -i '/intel-ucode\.img/d;/amd-ucode\.img/d' "$f"
+                      COMMIT_MSG="${COMMIT_MSG}
+          - removed separate ucode initrd refs from $(basename $f) (microcode is bundled in initramfs)"
+                      FIXES_APPLIED="${FIXES_APPLIED}fix-ucode-initrd;"
+                  fi
+              done
+              # Same for syslinux configs
+              for f in archiso/novatos/syslinux/*.cfg; do
+                  [ -f "$f" ] || continue
+                  if grep -qE 'intel-ucode\.img|amd-ucode\.img' "$f"; then
+                      sed -i '/intel-ucode\.img/d;/amd-ucode\.img/d' "$f"
+                      COMMIT_MSG="${COMMIT_MSG}
+          - removed separate ucode initrd refs from $(basename $f)"
+                      FIXES_APPLIED="${FIXES_APPLIED}fix-ucode-syslinux;"
+                  fi
+              done
+          fi
+
           # 9) "profiledef.sh: line N: ..." syntax errors — try bash -n to verify
           if [ "$(error_count 'profiledef.sh:')" -gt 0 ] || [ "$(error_count 'profiledef.sh line')" -gt 0 ]; then
               echo "=== profiledef.sh syntax errors detected ==="

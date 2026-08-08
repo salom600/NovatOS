@@ -110,6 +110,47 @@ jobs:
           fi
           echo "mkinitcpio-archiso found in package list"
 
+      - name: Check boot configs (UEFI + BIOS)
+        run: |
+          # UEFI: loader.conf + entries
+          if [ ! -f archiso/novatos/efiboot/loader/loader.conf ]; then
+              echo "::error::Missing efiboot/loader/loader.conf"
+              exit 1
+          fi
+          if ! ls archiso/novatos/efiboot/loader/entries/*.conf >/dev/null 2>&1; then
+              echo "::error::No UEFI boot entries in efiboot/loader/entries/"
+              exit 1
+          fi
+          # Check for the bug that caused "Error preparing initrd: Not found":
+          # UEFI entries must NOT reference separate intel-ucode.img / amd-ucode.img
+          # because the `microcode` hook bundles microcode INTO the main initramfs.
+          if grep -rE 'intel-ucode\.img|amd-ucode\.img' archiso/novatos/efiboot/loader/entries/; then
+              echo "::error::UEFI entries reference separate ucode .img files — these don't exist on the ESP (microcode is bundled in initramfs). Remove the intel-ucode.img / amd-ucode.img initrd lines."
+              exit 1
+          fi
+          # UEFI entries must use %ARCH% placeholder (not hardcoded x86_64)
+          if grep -rE '/x86_64/' archiso/novatos/efiboot/loader/entries/; then
+              echo "::error::UEFI entries use hardcoded /x86_64/ — should use /%ARCH%/ placeholder"
+              exit 1
+          fi
+          # BIOS: syslinux configs
+          for f in syslinux.cfg archiso_head.cfg archiso_sys.cfg archiso_sys-linux.cfg archiso_tail.cfg; do
+              if [ ! -f "archiso/novatos/syslinux/$f" ]; then
+                  echo "::error::Missing syslinux config: $f"
+                  exit 1
+              fi
+          done
+          # Same ucode check for syslinux
+          if grep -rE 'intel-ucode\.img|amd-ucode\.img' archiso/novatos/syslinux/; then
+              echo "::error::Syslinux configs reference separate ucode .img files — these don't exist (microcode is bundled in initramfs)."
+              exit 1
+          fi
+          # splash.png must exist (archiso copies it to /boot/syslinux/)
+          if [ ! -f archiso/novatos/syslinux/splash.png ]; then
+              echo "::warning::splash.png missing — syslinux will have no background image"
+          fi
+          echo "Boot configs OK"
+
       - name: Check archinstall config (replaces Calamares)
         run: |
           if [ ! -f archiso/novatos/airootfs/etc/novatos/archinstall-user-configuration.json ]; then
