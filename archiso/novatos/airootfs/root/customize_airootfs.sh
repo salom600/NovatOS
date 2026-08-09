@@ -16,13 +16,15 @@ locale-gen
 ln -sf /usr/share/zoneinfo/UTC /etc/localtime
 
 # ---------- Users ----------
-echo "==> [NovatOS] Creating novatos user..."
+echo "==> [NovatOS] Creating novatos user (no password — auto-login)..."
 groupadd -f wheel
 if ! id -u novatos >/dev/null 2>&1; then
     useradd -m -G wheel,storage,optical,network,video,audio,input -s /usr/bin/zsh -u 1000 novatos
 fi
-echo 'novatos:novatos' | chpasswd
-echo 'root:novatos'    | chpasswd
+# Set empty password (login without entering a password)
+echo 'novatos:' | chpasswd -e 2>/dev/null || echo 'novatos:U6aMy0wojraho' | chpasswd -e
+# Lock root account (no root login needed on live ISO)
+passwd -l root 2>/dev/null || true
 
 # ---------- Sudo ----------
 echo "==> [NovatOS] Configuring sudoers..."
@@ -64,22 +66,26 @@ for sock in cups sshd avahi-daemon; do
     systemctl enable "${sock}.socket" 2>/dev/null || true
 done
 
-# ---------- SDDM autologin (Hyprland on live boot) ----------
-echo "==> [NovatOS] Enabling SDDM autologin for Hyprland..."
+# ---------- SDDM autologin (Hyprland on live boot — no password) ----------
+echo "==> [NovatOS] Enabling SDDM autologin for Hyprland (no password)..."
 mkdir -p /etc/sddm.conf.d
 cat > /etc/sddm.conf.d/autologin.conf <<'EOF'
 [Autologin]
 User=novatos
 Session=hyprland
-EOF
-
-# ---------- SDDM theme ----------
-cat > /etc/sddm.conf.d/theme.conf <<'EOF'
-[Theme]
-Current=
 
 [Users]
-RememberLastUser=true
+SkipPassword=true
+EOF
+
+# ---------- PAM config: allow passwordless login ----------
+cat > /etc/pam.d/sddm-autologin <<'EOF'
+# PAM config for SDDM autologin — no password required
+auth       sufficient   pam_succeed_if.so user = novatos
+auth       required     pam_permit.so
+account    include      sddm
+password   include      sddm
+session    include      sddm
 EOF
 
 # ---------- Polkit ----------
@@ -206,8 +212,8 @@ Name=Install NovatOS
 Name[ar]=تثبيت NovatOS
 Comment=Launch the NovatOS installer
 Icon=novatos-installer
-Exec=foot -e sudo novatos-install
-Terminal=false
+Exec=novatos-install
+Terminal=true
 Categories=System;
 StartupNotify=true
 EOF

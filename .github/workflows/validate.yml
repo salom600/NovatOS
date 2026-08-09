@@ -174,16 +174,22 @@ jobs:
 
       - name: Check burner source
         run: |
-          if [ ! -f burner/src/main.py ]; then
-              echo "::error::Missing burner/src/main.py"
+          if [ ! -f burner/src/main.rs ]; then
+              echo "::error::Missing burner/src/main.rs"
               exit 1
           fi
-          # Validate Python syntax
-          python3 -c "import ast; ast.parse(open('burner/src/main.py').read())" || {
-              echo "::error::burner/src/main.py has syntax errors"
+          if [ ! -f burner/Cargo.toml ]; then
+              echo "::error::Missing burner/Cargo.toml"
               exit 1
-          }
-          echo "Burner source OK"
+          fi
+          # Basic syntax check (Rust isn't installed in the archlinux container,
+          # so we just check the files exist and have content)
+          SIZE=$(wc -c < burner/src/main.rs)
+          if [ "$SIZE" -lt 1000 ]; then
+              echo "::error::burner/src/main.rs is too small ($SIZE bytes) — may be empty"
+              exit 1
+          fi
+          echo "Burner source OK ($SIZE bytes)"
 
       - name: Check branding files
         run: |

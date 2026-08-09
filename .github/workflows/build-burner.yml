@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   build-burner:
-    name: Build Windows .exe USB burner
+    name: Build Rust Windows .exe USB burner
     runs-on: windows-latest
     timeout-minutes: 15
 
@@ -21,35 +21,27 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
         with:
-          python-version: '3.12'
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            burner/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('burner/Cargo.lock', 'burner/Cargo.toml') }}
+          restore-keys: ${{ runner.os }}-cargo-
 
-      - name: Install dependencies
-        shell: cmd
-        run: |
-          pip install pyinstaller pillow --upgrade
-
-      - name: Generate icon
+      - name: Build release .exe
         shell: pwsh
-        run: |
-          if (-not (Test-Path burner\novatos.ico)) {
-            python -c "from PIL import Image; img = Image.new('RGBA', (256, 256), (15, 17, 23, 255)); img.save('burner/novatos.ico')"
-          }
-
-      - name: Build .exe
-        shell: cmd
         working-directory: burner
         run: |
-          pyinstaller --onefile --windowed --name NovatOSBurner --icon=novatos.ico --noconfirm --clean src\main.py
-
-      - name: Verify .exe
-        shell: pwsh
-        run: |
-          if (Test-Path burner\dist\NovatOSBurner.exe) {
-            $size = (Get-Item burner\dist\NovatOSBurner.exe).Length / 1MB
-            Write-Host "NovatOSBurner.exe built successfully ($([math]::Round($size, 1)) MB)"
+          cargo build --release
+          if (Test-Path target\release\NovatOSBurner.exe) {
+            $size = [math]::Round((Get-Item target\release\NovatOSBurner.exe).Length / 1MB, 2)
+            Write-Host "NovatOSBurner.exe built successfully ($size MB)"
           } else {
             Write-Error "NovatOSBurner.exe not found!"
             exit 1
@@ -59,7 +51,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: NovatOSBurner-exe
-          path: burner/dist/NovatOSBurner.exe
+          path: burner/target/release/NovatOSBurner.exe
           retention-days: 30
 
       - name: Publish .exe to latest release
@@ -68,12 +60,25 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Find the latest release and upload the .exe to it
-          $release = gh release view --repo $env:GITHUB_REPOSITORY --json tagName,assets | ConvertFrom-Json
+          # Wait up to 5 minutes for the ISO build to create a release
+          $retries = 30
+          $release = $null
+          while ($retries -gt 0) {
+            try {
+              $release = gh release view --repo $env:GITHUB_REPOSITORY --json tagName,uploadUrl 2>$null | ConvertFrom-Json
+              if ($release -and $release.tagName) {
+                break
+              }
+            } catch {}
+            Write-Host "Waiting for ISO release to be created... ($retries retries left)"
+            Start-Sleep -Seconds 10
+            $retries--
+          }
+
           if ($release) {
             Write-Host "Uploading NovatOSBurner.exe to release: $($release.tagName)"
-            gh release upload $release.tagName burner/dist/NovatOSBurner.exe --repo $env:GITHUB_REPOSITORY --clobber
+            gh release upload $release.tagName burner/target/release/NovatOSBurner.exe --repo $env:GITHUB_REPOSITORY --clobber
           } else {
             Write-Host "No existing release found — creating a new one for the burner"
-            gh release create "burner-${{ github.run_number }}" burner/dist/NovatOSBurner.exe --repo $env:GITHUB_REPOSITORY --title "NovatOS Burner (Build ${{ github.run_number }})" --notes "Windows USB burner .exe"
+            gh release create "burner-${{ github.run_number }}" burner/target/release/NovatOSBurner.exe --repo $env:GITHUB_REPOSITORY --title "NovatOS Burner (Build ${{ github.run_number }})" --notes "Windows USB burner .exe (Rust)"
           }
