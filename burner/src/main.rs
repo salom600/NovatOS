@@ -1,10 +1,9 @@
-// NovatOS USB Burner — native Windows .exe (Rust)
-// =================================================
+// NovatOS USB Burner — native Windows .exe (Rust + windows-sys)
+// ==============================================================
 // Flash NovatOS ISO to USB drives in DD (raw) mode.
-// No runtime dependencies — single .exe file.
+// Single .exe, no runtime dependencies.
 //
-// Build: cargo build --release
-// Output: target/release/NovatOSBurner.exe
+// Uses windows-sys (raw FFI bindings) for maximum stability across versions.
 
 #![windows_subsystem = "windows"]
 
@@ -12,38 +11,35 @@ use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
 use std::ptr;
 
-use windows::core::PCWSTR;
-use windows::Win32::Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE};
-use windows::Win32::Graphics::Gdi::HBRUSH;
-use windows::Win32::Storage::FileSystem::{
+use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+use windows_sys::Win32::Storage::FileSystem::{
     CreateFileW, GetFileSizeEx, ReadFile, WriteFile, FILE_ATTRIBUTE_NORMAL,
     FILE_SHARE_READ, FILE_SHARE_WRITE, GENERIC_READ, GENERIC_WRITE, OPEN_EXISTING,
 };
-use windows::Win32::System::Threading::CreateThread;
-use windows::Win32::UI::Controls::InitCommonControls;
-use windows::Win32::UI::WindowsAndMessaging::{
-    BM_SETSTATE, BS_PUSHBUTTON, CreateWindowExW, DefWindowProcW, DispatchMessageW,
-    EnableWindow, GetDlgItem, GetMessageW, GetOpenFileNameW, LB_ADDSTRING,
-    LB_GETCURSEL, LB_RESETCONTENT, LoadCursorW, MessageBoxW, MB_ICONERROR,
-    MB_ICONINFORMATION, MB_ICONWARNING, MB_OK, MB_YESNO, MessageBoxResult, PBM_SETPOS,
-    PBM_SETRANGE32, PostQuitMessage, RegisterClassW, SendMessageW, ShowWindow,
-    TranslateMessage, IDC_ARROW, OPENFILENAMEW, SW_SHOW, WM_COMMAND, WM_DESTROY,
-    WM_SETTEXT, WNDCLASSW, WS_BORDER, WS_CHILD, WS_VISIBLE, WS_OVERLAPPEDWINDOW,
-    CW_USEDEFAULT, COLOR_BTNFACE,
+use windows_sys::Win32::System::Threading::CreateThread;
+use windows_sys::Win32::UI::WindowsAndMessaging::{
+    CreateWindowExW, DefWindowProcW, DispatchMessageW, EnableWindow, GetDlgItem,
+    GetMessageW, GetOpenFileNameW, LoadCursorW, MessageBoxW, PostQuitMessage,
+    RegisterClassW, SendMessageW, ShowWindow, TranslateMessage,
+    BM_SETSTATE, BS_PUSHBUTTON, COLOR_BTNFACE, CW_USEDEFAULT, IDC_ARROW,
+    IDYES, LB_ADDSTRING, LB_GETCURSEL, LB_RESETCONTENT, MB_ICONERROR,
+    MB_ICONINFORMATION, MB_ICONWARNING, MB_OK, MB_YESNO, OFN_FILEMUSTEXIST,
+    OFN_HIDEREADONLY, OPENFILENAMEW, PBM_SETPOS, PBM_SETRANGE32, SW_SHOW,
+    WM_COMMAND, WM_DESTROY, WM_SETTEXT, WNDCLASSW, WS_BORDER, WS_CHILD,
+    WS_OVERLAPPEDWINDOW, WS_VISIBLE,
 };
 
-// ─── Constants ───
-const ID_ISO_BUTTON: u16 = 1001;
-const ID_DRIVE_LIST: u16 = 1002;
-const ID_REFRESH_BUTTON: u16 = 1003;
-const ID_WRITE_BUTTON: u16 = 1004;
-const ID_ISO_LABEL: u16 = 1005;
-const ID_PROGRESS: u16 = 1006;
-const ID_STATUS_LABEL: u16 = 1007;
-const ID_SPEED_LABEL: u16 = 1008;
+// ─── Control IDs ───
+const ID_ISO_BUTTON: usize = 1001;
+const ID_DRIVE_LIST: usize = 1002;
+const ID_REFRESH_BUTTON: usize = 1003;
+const ID_WRITE_BUTTON: usize = 1004;
+const ID_ISO_LABEL: usize = 1005;
+const ID_PROGRESS: usize = 1006;
+const ID_STATUS_LABEL: usize = 1007;
+const ID_SPEED_LABEL: usize = 1008;
+
 const LBS_NOTIFY: u32 = 0x00100000;
-const OFN_FILEMUSTEXIST: u32 = 0x00001000;
-const OFN_HIDEREADONLY: u32 = 0x00000004;
 const DRIVE_REMOVABLE: u32 = 2;
 
 // ─── Global state ───
@@ -79,13 +75,13 @@ extern "system" fn wnd_proc(hwnd: isize, msg: u32, wp: usize, lp: isize) -> isiz
     unsafe {
         match msg {
             WM_COMMAND => {
-                let ctrl_id = (wp & 0xFFFF) as u16;
-                let notification = ((wp >> 16) & 0xFFFF) as u16;
+                let ctrl_id = (wp & 0xFFFF) as usize;
+                let notification = ((wp >> 16) & 0xFFFF) as usize;
                 match ctrl_id {
-                    x if x == ID_ISO_BUTTON => open_iso_dialog(hwnd),
-                    x if x == ID_REFRESH_BUTTON => refresh_drives(hwnd),
-                    x if x == ID_WRITE_BUTTON => start_write(hwnd),
-                    x if x == ID_DRIVE_LIST && notification == 1 => on_drive_select(hwnd),
+                    ID_ISO_BUTTON => open_iso_dialog(hwnd),
+                    ID_REFRESH_BUTTON => refresh_drives(hwnd),
+                    ID_WRITE_BUTTON => start_write(hwnd),
+                    ID_DRIVE_LIST if notification == 1 => on_drive_select(hwnd),
                     _ => {}
                 }
                 0
@@ -99,91 +95,64 @@ extern "system" fn wnd_proc(hwnd: isize, msg: u32, wp: usize, lp: isize) -> isiz
     }
 }
 
-// ─── Create child controls ───
-fn create_control(class: &str, style: u32, parent: isize, id: u16, text: &str, x: i32, y: i32, w: i32, h: i32) -> isize {
+// ─── Create a child control ───
+fn create_control(class: &str, style: u32, parent: isize, id: usize, text: &str, x: i32, y: i32, w: i32, h: i32) -> isize {
     unsafe {
         let class_w = to_wide(class);
         let text_w = to_wide(text);
-        let hwnd = CreateWindowExW(
+        CreateWindowExW(
             0,
-            PCWSTR(class_w.as_ptr()),
-            PCWSTR(text_w.as_ptr()),
+            class_w.as_ptr(),
+            text_w.as_ptr(),
             style,
             x, y, w, h,
-            windows::core::HWND(parent),
-            id as _,
-            None,
-            ptr::null(),
-        );
-        hwnd.map(|h| h.0).unwrap_or(0)
+            parent,
+            id as *mut _,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
     }
 }
 
-fn create_button(parent: isize, id: u16, text: &str, x: i32, y: i32, w: i32, h: i32) -> isize {
+fn create_button(parent: isize, id: usize, text: &str, x: i32, y: i32, w: i32, h: i32) -> isize {
     create_control(
         "BUTTON",
-        (WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON).0 as u32,
+        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON as u32,
         parent, id, text, x, y, w, h,
     )
 }
 
-fn create_label(parent: isize, id: u16, text: &str, x: i32, y: i32, w: i32, h: i32) -> isize {
-    create_control("STATIC", (WS_CHILD | WS_VISIBLE).0 as u32, parent, id, text, x, y, w, h)
+fn create_label(parent: isize, id: usize, text: &str, x: i32, y: i32, w: i32, h: i32) -> isize {
+    create_control("STATIC", WS_CHILD | WS_VISIBLE, parent, id, text, x, y, w, h)
 }
 
-fn create_listbox(parent: isize, id: u16, x: i32, y: i32, w: i32, h: i32) -> isize {
+fn create_listbox(parent: isize, id: usize, x: i32, y: i32, w: i32, h: i32) -> isize {
     create_control(
         "LISTBOX",
-        (WS_CHILD | WS_VISIBLE | WS_BORDER | LBS_NOTIFY).0 as u32,
+        WS_CHILD | WS_VISIBLE | WS_BORDER | LBS_NOTIFY,
         parent, id, "", x, y, w, h,
     )
 }
 
-fn create_progress(parent: isize, id: u16, x: i32, y: i32, w: i32, h: i32) -> isize {
-    unsafe {
-        let class_w = to_wide("msctls_progress32");
-        let text_w = to_wide("");
-        let hwnd = CreateWindowExW(
-            0,
-            PCWSTR(class_w.as_ptr()),
-            PCWSTR(text_w.as_ptr()),
-            (WS_CHILD | WS_VISIBLE).0 as u32,
-            x, y, w, h,
-            windows::core::HWND(parent),
-            id as _,
-            None,
-            ptr::null(),
-        );
-        hwnd.map(|h| h.0).unwrap_or(0)
-    }
+fn create_progress(parent: isize, id: usize, x: i32, y: i32, w: i32, h: i32) -> isize {
+    create_control("msctls_progress32", WS_CHILD | WS_VISIBLE, parent, id, "", x, y, w, h)
 }
 
-// ─── Find child control by ID ───
-fn find_control(parent: isize, id: u16) -> isize {
-    unsafe {
-        GetDlgItem(windows::core::HWND(parent), id as i32)
-            .map(|h| h.0)
-            .unwrap_or(0)
-    }
+fn find_control(parent: isize, id: usize) -> isize {
+    unsafe { GetDlgItem(parent, id as i32) }
 }
 
-// ─── Set text of a control ───
-fn set_control_text(parent: isize, id: u16, text: &str) {
+fn set_control_text(parent: isize, id: usize, text: &str) {
     unsafe {
         let hwnd = find_control(parent, id);
         if hwnd != 0 {
             let text_w = to_wide(text);
-            let _ = SendMessageW(
-                windows::core::HWND(hwnd),
-                WM_SETTEXT as u32,
-                0,
-                text_w.as_ptr() as _,
-            );
+            SendMessageW(hwnd, WM_SETTEXT as u32, 0, text_w.as_ptr() as _);
         }
     }
 }
 
-// ─── File dialog (open ISO) ───
+// ─── File dialog ───
 fn open_iso_dialog(hwnd: isize) {
     unsafe {
         let mut file_buf = [0u16; 260];
@@ -192,14 +161,14 @@ fn open_iso_dialog(hwnd: isize) {
 
         let mut ofn: OPENFILENAMEW = std::mem::zeroed();
         ofn.lStructSize = std::mem::size_of::<OPENFILENAMEW>() as u32;
-        ofn.hwndOwner = windows::core::HWND(hwnd);
-        ofn.lpstrFilter = PCWSTR(filter.as_ptr());
-        ofn.lpstrFile = windows::core::PWSTR(file_buf.as_mut_ptr());
+        ofn.hwndOwner = hwnd;
+        ofn.lpstrFilter = filter.as_ptr();
+        ofn.lpstrFile = file_buf.as_mut_ptr();
         ofn.nMaxFile = file_buf.len() as u32;
-        ofn.lpstrTitle = PCWSTR(title.as_ptr());
+        ofn.lpstrTitle = title.as_ptr();
         ofn.Flags = OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
 
-        if GetOpenFileNameW(&mut ofn as *mut OPENFILENAMEW).as_bool() {
+        if GetOpenFileNameW(&mut ofn as *mut _ as _) != 0 {
             let path = from_wide(&file_buf);
             ISO_PATH = Some(path.clone());
 
@@ -217,7 +186,6 @@ fn open_iso_dialog(hwnd: isize) {
 // ─── Get logical drives ───
 fn get_logical_drives_bitmask() -> u32 {
     unsafe {
-        // GetLogicalDrives from kernel32
         extern "system" {
             fn GetLogicalDrives() -> u32;
         }
@@ -225,40 +193,35 @@ fn get_logical_drives_bitmask() -> u32 {
     }
 }
 
-// ─── Get drive type ───
 fn get_drive_type(root: &str) -> u32 {
     unsafe {
         let root_w = to_wide(root);
         extern "system" {
-            fn GetDriveTypeW(lpRootPathName: PCWSTR) -> u32;
+            fn GetDriveTypeW(lpRootPathName: *const u16) -> u32;
         }
-        GetDriveTypeW(PCWSTR(root_w.as_ptr()))
+        GetDriveTypeW(root_w.as_ptr())
     }
 }
 
-// ─── Get drive size ───
 fn get_drive_size(device_path: &str) -> u64 {
     unsafe {
         let path_w = to_wide(device_path);
         let handle = CreateFileW(
-            PCWSTR(path_w.as_ptr()),
-            GENERIC_READ.0,
+            path_w.as_ptr(),
+            GENERIC_READ,
             FILE_SHARE_READ | FILE_SHARE_WRITE,
-            None,
+            ptr::null(),
             OPEN_EXISTING,
             FILE_ATTRIBUTE_NORMAL,
-            None,
+            0,
         );
 
-        let handle = match handle {
-            Ok(h) if h != INVALID_HANDLE_VALUE => h,
-            _ => return 0,
-        };
+        if handle == INVALID_HANDLE_VALUE {
+            return 0;
+        }
 
-        // Use GetFileSizeEx (works on device handles)
         let mut file_size: i64 = 0;
         let _ = GetFileSizeEx(handle, &mut file_size);
-
         let _ = CloseHandle(handle);
         file_size as u64
     }
@@ -268,7 +231,7 @@ fn get_drive_size(device_path: &str) -> u64 {
 fn refresh_drives(hwnd: isize) {
     unsafe {
         let listbox = find_control(hwnd, ID_DRIVE_LIST);
-        let _ = SendMessageW(windows::core::HWND(listbox), LB_RESETCONTENT, 0, 0);
+        SendMessageW(listbox, LB_RESETCONTENT, 0, 0);
 
         let drives = get_logical_drives_bitmask();
 
@@ -283,23 +246,17 @@ fn refresh_drives(hwnd: isize) {
                     let size_str = format_size(size);
                     let label = format!("{}:  —  {}", letter, size_str);
                     let label_w = to_wide(&label);
-                    let _ = SendMessageW(
-                        windows::core::HWND(listbox),
-                        LB_ADDSTRING,
-                        0,
-                        label_w.as_ptr() as _,
-                    );
+                    SendMessageW(listbox, LB_ADDSTRING, 0, label_w.as_ptr() as _);
                 }
             }
         }
     }
 }
 
-// ─── Drive selection ───
 fn on_drive_select(hwnd: isize) {
     unsafe {
         let listbox = find_control(hwnd, ID_DRIVE_LIST);
-        let sel = SendMessageW(windows::core::HWND(listbox), LB_GETCURSEL, 0, 0);
+        let sel = SendMessageW(listbox, LB_GETCURSEL, 0, 0);
         if sel >= 0 {
             let letter = (b'A' + sel as u8) as char;
             SELECTED_DRIVE = Some(letter.to_string());
@@ -308,30 +265,22 @@ fn on_drive_select(hwnd: isize) {
     }
 }
 
-// ─── Enable/disable write button ───
 fn update_write_button(hwnd: isize) {
     unsafe {
         let btn = find_control(hwnd, ID_WRITE_BUTTON);
         let enabled = ISO_PATH.is_some() && SELECTED_DRIVE.is_some() && !IS_WRITING;
-        let _ = EnableWindow(windows::core::HWND(btn), enabled);
+        EnableWindow(btn, enabled as i32);
     }
 }
 
-// ─── Show message box ───
-fn msg_box(hwnd: isize, msg: &str, title: &str, flags: u32) -> MessageBoxResult {
+fn msg_box(hwnd: isize, msg: &str, title: &str, flags: u32) -> i32 {
     unsafe {
         let msg_w = to_wide(msg);
         let title_w = to_wide(title);
-        MessageBoxW(
-            windows::core::HWND(hwnd),
-            PCWSTR(msg_w.as_ptr()),
-            PCWSTR(title_w.as_ptr()),
-            flags,
-        )
+        MessageBoxW(hwnd, msg_w.as_ptr(), title_w.as_ptr(), flags)
     }
 }
 
-// ─── Start write process ───
 fn start_write(hwnd: isize) {
     unsafe {
         let iso = match ISO_PATH.clone() {
@@ -355,21 +304,19 @@ fn start_write(hwnd: isize) {
             file_name, drive
         );
 
-        if msg_box(hwnd, &msg, "Confirm Write", MB_YESNO | MB_ICONWARNING) != MessageBoxResult::IDYES {
+        if msg_box(hwnd, &msg, "Confirm Write", MB_YESNO | MB_ICONWARNING) != IDYES {
             return;
         }
 
         IS_WRITING = true;
         update_write_button(hwnd);
 
-        let hwnd_thread = hwnd;
         std::thread::spawn(move || {
-            write_iso(hwnd_thread, &iso, &drive);
+            write_iso(hwnd, &iso, &drive);
         });
     }
 }
 
-// ─── Write ISO to USB drive ───
 fn write_iso(hwnd: isize, iso_path: &str, drive_letter: &str) {
     unsafe {
         set_control_text(hwnd, ID_STATUS_LABEL, "Opening USB drive for raw write...");
@@ -378,28 +325,25 @@ fn write_iso(hwnd: isize, iso_path: &str, drive_letter: &str) {
         let device_path = format!("\\\\.\\{}:", drive_letter);
         let path_w = to_wide(&device_path);
         let handle = CreateFileW(
-            PCWSTR(path_w.as_ptr()),
-            GENERIC_READ.0 | GENERIC_WRITE.0,
+            path_w.as_ptr(),
+            GENERIC_READ | GENERIC_WRITE,
             FILE_SHARE_READ | FILE_SHARE_WRITE,
-            None,
+            ptr::null(),
             OPEN_EXISTING,
             FILE_ATTRIBUTE_NORMAL,
-            None,
+            0,
         );
 
-        let handle = match handle {
-            Ok(h) if h != INVALID_HANDLE_VALUE => h,
-            _ => {
-                set_control_text(hwnd, ID_STATUS_LABEL,
-                    &format!("Error: Cannot open drive {} (run as Administrator)", drive_letter));
-                IS_WRITING = false;
-                update_write_button(hwnd);
-                msg_box(hwnd,
-                    &format!("Cannot open drive {}:\n\nMake sure you run NovatOSBurner.exe as Administrator.", drive_letter),
-                    "Error", MB_OK | MB_ICONERROR);
-                return;
-            }
-        };
+        if handle == INVALID_HANDLE_VALUE {
+            set_control_text(hwnd, ID_STATUS_LABEL,
+                &format!("Error: Cannot open drive {} (run as Administrator)", drive_letter));
+            IS_WRITING = false;
+            update_write_button(hwnd);
+            msg_box(hwnd,
+                &format!("Cannot open drive {}:\n\nMake sure you run NovatOSBurner.exe as Administrator.", drive_letter),
+                "Error", MB_OK | MB_ICONERROR);
+            return;
+        }
 
         let mut iso = match std::fs::File::open(iso_path) {
             Ok(f) => f,
@@ -424,12 +368,10 @@ fn write_iso(hwnd: isize, iso_path: &str, drive_letter: &str) {
             }
         };
 
-        // Set progress range 0-10000
         let progress = find_control(hwnd, ID_PROGRESS);
-        let _ = SendMessageW(windows::core::HWND(progress), PBM_SETRANGE32, 0, 10000);
-        let _ = SendMessageW(windows::core::HWND(progress), PBM_SETPOS, 0, 0);
+        SendMessageW(progress, PBM_SETRANGE32 as u32, 0, 10000);
+        SendMessageW(progress, PBM_SETPOS as u32, 0, 0);
 
-        // Write in 4MB chunks
         let chunk_size = 4 * 1024 * 1024usize;
         let mut buf = vec![0u8; chunk_size];
         let mut written: u64 = 0;
@@ -452,9 +394,9 @@ fn write_iso(hwnd: isize, iso_path: &str, drive_letter: &str) {
             };
 
             let mut bytes_written: u32 = 0;
-            let ok = WriteFile(handle, Some(&buf[..n]), &mut bytes_written, None);
+            let ok = WriteFile(handle, buf.as_ptr() as *const _, n as u32, &mut bytes_written, ptr::null_mut());
 
-            if ok.is_err() {
+            if ok == 0 {
                 let _ = CloseHandle(handle);
                 set_control_text(hwnd, ID_STATUS_LABEL, &format!("Error writing at offset {}", written));
                 IS_WRITING = false;
@@ -470,7 +412,7 @@ fn write_iso(hwnd: isize, iso_path: &str, drive_letter: &str) {
             let speed = if elapsed > 0.0 { written as f64 / elapsed } else { 0.0 };
             let pct = (written as f64 / iso_size as f64 * 10000.0) as usize;
 
-            let _ = SendMessageW(windows::core::HWND(progress), PBM_SETPOS, pct, 0);
+            SendMessageW(progress, PBM_SETPOS as u32, pct, 0);
             set_control_text(hwnd, ID_STATUS_LABEL,
                 &format!("Writing... {} / {}", format_size(written), format_size(iso_size)));
             set_control_text(hwnd, ID_SPEED_LABEL, &format!("{:.1} MB/s", speed / 1024.0 / 1024.0));
@@ -491,7 +433,7 @@ fn write_iso(hwnd: isize, iso_path: &str, drive_letter: &str) {
         let _ = CloseHandle(handle);
 
         set_control_text(hwnd, ID_STATUS_LABEL, "✓ Done! USB drive is bootable.");
-        let _ = SendMessageW(windows::core::HWND(progress), PBM_SETPOS, 10000, 0);
+        SendMessageW(progress, PBM_SETPOS as u32, 10000, 0);
         IS_WRITING = false;
         update_write_button(hwnd);
 
@@ -500,8 +442,7 @@ fn write_iso(hwnd: isize, iso_path: &str, drive_letter: &str) {
     }
 }
 
-// ─── Verify ISO by sample comparison ───
-fn verify_iso(iso: &mut std::fs::File, handle: HANDLE, iso_size: u64) -> bool {
+fn verify_iso(iso: &mut std::fs::File, handle: isize, iso_size: u64) -> bool {
     unsafe {
         let samples: Vec<(u64, u64)> = vec![
             (0, 1024 * 1024),
@@ -524,13 +465,17 @@ fn verify_iso(iso: &mut std::fs::File, handle: HANDLE, iso_size: u64) -> bool {
                 continue;
             }
 
-            // Seek on the device handle
-            use windows::Win32::Storage::FileSystem::SetFilePointerEx;
-            if SetFilePointerEx(handle, offset as i64, None, 0).is_err() {
+            // Seek on device handle
+            extern "system" {
+                fn SetFilePointerEx(hFile: isize, liDistanceToMove: i64,
+                    lpNewFilePointer: *mut i64, dwMoveMethod: u32) -> i32;
+            }
+            if SetFilePointerEx(handle, offset as i64, ptr::null_mut(), 0) == 0 {
                 return false;
             }
             let mut bytes_read: u32 = 0;
-            if ReadFile(handle, Some(&mut usb_buf[..size as usize]), &mut bytes_read, None).is_err() {
+            if ReadFile(handle, usb_buf.as_mut_ptr() as *mut _, size as u32,
+                        &mut bytes_read, ptr::null_mut()) == 0 {
                 return false;
             }
             if iso_buf[..size as usize] != usb_buf[..size as usize] {
@@ -541,77 +486,76 @@ fn verify_iso(iso: &mut std::fs::File, handle: HANDLE, iso_size: u64) -> bool {
     }
 }
 
-// ─── Main entry point ───
+// ─── Main ───
 fn main() {
     unsafe {
         let class_name = to_wide("NovatOSBurner");
 
         let wc = WNDCLASSW {
             lpfnWndProc: Some(wnd_proc),
-            lpszClassName: PCWSTR(class_name.as_ptr()),
-            hbrBackground: HBRUSH(COLOR_BTNFACE as _),
-            hCursor: LoadCursorW(None, IDC_ARROW).ok(),
+            lpszClassName: class_name.as_ptr(),
+            hbrBackground: COLOR_BTNFACE as *mut _,
+            hCursor: LoadCursorW(0, IDC_ARROW),
             ..Default::default()
         };
 
         RegisterClassW(&wc);
-        let _ = InitCommonControls();
+
+        // Init common controls (progress bar)
+        extern "system" {
+            fn InitCommonControls();
+        }
+        InitCommonControls();
 
         let title = to_wide("NovatOS USB Burner");
         let hwnd = CreateWindowExW(
             0,
-            PCWSTR(class_name.as_ptr()),
-            PCWSTR(title.as_ptr()),
-            (WS_OVERLAPPEDWINDOW & !(WS_OVERLAPPEDWINDOW & 0x00040000) & !(WS_OVERLAPPEDWINDOW & 0x00020000)).0 as u32,
+            class_name.as_ptr(),
+            title.as_ptr(),
+            WS_OVERLAPPEDWINDOW & !0x00040000 & !0x00020000, // no maximize, no thickframe
             CW_USEDEFAULT, CW_USEDEFAULT,
             640, 600,
-            None,
-            None,
-            None,
-            ptr::null(),
-        )
-        .expect("Failed to create window");
+            0, 0, 0, ptr::null_mut(),
+        );
 
-        let h = hwnd.0;
+        if hwnd == 0 {
+            return;
+        }
 
         // Header
-        create_label(h, 0, "NovatOS USB Burner", 20, 15, 400, 24);
-        create_label(h, 0, "Flash NovatOS ISO to a USB drive (DD mode)", 20, 38, 400, 18);
+        create_label(hwnd, 0, "NovatOS USB Burner", 20, 15, 400, 24);
+        create_label(hwnd, 0, "Flash NovatOS ISO to a USB drive (DD mode)", 20, 38, 400, 18);
 
         // ISO selection
-        create_label(h, 0, "ISO File:", 20, 75, 100, 18);
-        create_label(h, ID_ISO_LABEL, "No ISO selected", 20, 95, 440, 20);
-        create_button(h, ID_ISO_BUTTON, "Browse...", 470, 92, 130, 26);
+        create_label(hwnd, 0, "ISO File:", 20, 75, 100, 18);
+        create_label(hwnd, ID_ISO_LABEL, "No ISO selected", 20, 95, 440, 20);
+        create_button(hwnd, ID_ISO_BUTTON, "Browse...", 470, 92, 130, 26);
 
         // Drive selection
-        create_label(h, 0, "USB Drive:", 20, 135, 100, 18);
-        create_listbox(h, ID_DRIVE_LIST, 20, 155, 440, 120);
-        create_button(h, ID_REFRESH_BUTTON, "Refresh", 470, 155, 130, 26);
+        create_label(hwnd, 0, "USB Drive:", 20, 135, 100, 18);
+        create_listbox(hwnd, ID_DRIVE_LIST, 20, 155, 440, 120);
+        create_button(hwnd, ID_REFRESH_BUTTON, "Refresh", 470, 155, 130, 26);
 
         // Progress
-        create_label(h, ID_STATUS_LABEL, "Ready", 20, 295, 580, 20);
-        create_progress(h, ID_PROGRESS, 20, 315, 580, 24);
-        create_label(h, ID_SPEED_LABEL, "", 20, 343, 580, 18);
+        create_label(hwnd, ID_STATUS_LABEL, "Ready", 20, 295, 580, 20);
+        create_progress(hwnd, ID_PROGRESS, 20, 315, 580, 24);
+        create_label(hwnd, ID_SPEED_LABEL, "", 20, 343, 580, 18);
 
         // Write button
-        let write_btn = create_button(h, ID_WRITE_BUTTON, "Write to USB", 220, 380, 200, 40);
+        let write_btn = create_button(hwnd, ID_WRITE_BUTTON, "Write to USB", 220, 380, 200, 40);
 
         // Warning
-        create_label(h, 0, "⚠ All data on the selected USB drive will be permanently erased.", 20, 440, 580, 20);
+        create_label(hwnd, 0, "⚠ All data on the selected USB drive will be permanently erased.", 20, 440, 580, 20);
 
-        // Disable write button initially
-        let _ = EnableWindow(windows::core::HWND(write_btn), false);
+        EnableWindow(write_btn, 0);
 
-        // Initial drive scan
-        refresh_drives(h);
+        refresh_drives(hwnd);
 
-        // Show window
         ShowWindow(hwnd, SW_SHOW);
 
-        // Message loop
         let mut msg = std::mem::zeroed();
-        while GetMessageW(&mut msg, None, 0, 0).into() {
-            let _ = TranslateMessage(&msg);
+        while GetMessageW(&mut msg, 0, 0, 0) > 0 {
+            TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
     }
