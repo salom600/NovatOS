@@ -332,7 +332,7 @@ static HWND create_ctrl(const WCHAR *class, DWORD style, HWND parent,
 }
 
 /* ─── WinMain ─── */
-int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, LPWSTR cmd, int show) {
+int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmd, int show) {
     /* Register window class */
     const WCHAR *class_name = L"NovatOSBurner";
     WNDCLASSW wc = {0};
