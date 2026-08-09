@@ -19,7 +19,6 @@ use windows::Win32::Storage::FileSystem::{
     CreateFileW, GetFileSizeEx, ReadFile, WriteFile, FILE_ATTRIBUTE_NORMAL,
     FILE_SHARE_READ, FILE_SHARE_WRITE, GENERIC_READ, GENERIC_WRITE, OPEN_EXISTING,
 };
-use windows::Win32::Storage::DeviceIO::DeviceIoControl;
 use windows::Win32::System::Threading::CreateThread;
 use windows::Win32::UI::Controls::InitCommonControls;
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -46,7 +45,6 @@ const LBS_NOTIFY: u32 = 0x00100000;
 const OFN_FILEMUSTEXIST: u32 = 0x00001000;
 const OFN_HIDEREADONLY: u32 = 0x00000004;
 const DRIVE_REMOVABLE: u32 = 2;
-const IOCTL_DISK_GET_LENGTH_INFO: u32 = 0x0007405C;
 
 // ─── Global state ───
 static mut ISO_PATH: Option<String> = None;
@@ -257,31 +255,12 @@ fn get_drive_size(device_path: &str) -> u64 {
             _ => return 0,
         };
 
-        // Try IOCTL_DISK_GET_LENGTH_INFO
-        let mut size: u64 = 0;
-        let mut bytes_returned: u32 = 0;
-        let ok = DeviceIoControl(
-            handle,
-            IOCTL_DISK_GET_LENGTH_INFO,
-            None,
-            0,
-            Some(&mut size as *mut u64 as *mut _),
-            std::mem::size_of::<u64>() as u32,
-            Some(&mut bytes_returned),
-            None,
-        );
-
-        let result = if ok.is_ok() && bytes_returned > 0 {
-            size
-        } else {
-            // Fallback: GetFileSizeEx
-            let mut file_size: i64 = 0;
-            let _ = GetFileSizeEx(handle, &mut file_size);
-            file_size as u64
-        };
+        // Use GetFileSizeEx (works on device handles)
+        let mut file_size: i64 = 0;
+        let _ = GetFileSizeEx(handle, &mut file_size);
 
         let _ = CloseHandle(handle);
-        result
+        file_size as u64
     }
 }
 

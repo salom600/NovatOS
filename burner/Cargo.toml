@@ -16,8 +16,6 @@ windows = { version = "0.61", features = [
     "Win32_System_IO",
     "Win32_System_Threading",
     "Win32_Security",
-    "Win32_Storage_DeviceIO",
-    "Win32_System_Diagnostics_Debug",
     "Win32_UI_WindowsAndMessaging",
     "Win32_UI_Controls",
     "Win32_Graphics_Gdi",
