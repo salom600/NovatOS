@@ -10,7 +10,7 @@ name = "NovatOSBurner"
 path = "src/main.rs"
 
 [dependencies]
-windows = { version = "0.58", features = [
+windows = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Storage_FileSystem",
     "Win32_System_IO",
@@ -20,6 +20,7 @@ windows = { version = "0.58", features = [
     "Win32_System_Diagnostics_Debug",
     "Win32_UI_WindowsAndMessaging",
     "Win32_UI_Controls",
+    "Win32_Graphics_Gdi",
 ] }
 
 [profile.release]
