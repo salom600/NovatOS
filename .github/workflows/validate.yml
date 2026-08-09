@@ -174,22 +174,23 @@ jobs:
 
       - name: Check burner source
         run: |
-          if [ ! -f burner/src/main.rs ]; then
-              echo "::error::Missing burner/src/main.rs"
+          if [ ! -f burner/src/main.c ]; then
+              echo "::error::Missing burner/src/main.c"
               exit 1
           fi
-          if [ ! -f burner/Cargo.toml ]; then
-              echo "::error::Missing burner/Cargo.toml"
-              exit 1
-          fi
-          # Basic syntax check (Rust isn't installed in the archlinux container,
-          # so we just check the files exist and have content)
-          SIZE=$(wc -c < burner/src/main.rs)
+          SIZE=$(wc -c < burner/src/main.c)
           if [ "$SIZE" -lt 1000 ]; then
-              echo "::error::burner/src/main.rs is too small ($SIZE bytes) — may be empty"
+              echo "::error::burner/src/main.c is too small ($SIZE bytes) — may be empty"
               exit 1
           fi
-          echo "Burner source OK ($SIZE bytes)"
+          # Check for balanced braces
+          OPENS=$(grep -o '{' burner/src/main.c | wc -l)
+          CLOSES=$(grep -o '}' burner/src/main.c | wc -l)
+          if [ "$OPENS" != "$CLOSES" ]; then
+              echo "::error::Unbalanced braces in main.c ($OPENS open, $CLOSES close)"
+              exit 1
+          fi
+          echo "Burner source OK ($SIZE bytes, braces balanced)"
 
       - name: Check branding files
         run: |

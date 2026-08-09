@@ -13,45 +13,41 @@ permissions:
 
 jobs:
   build-burner:
-    name: Build Rust Windows .exe USB burner
+    name: Build C Windows .exe USB burner
     runs-on: windows-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Cargo
-        uses: actions/cache@v4
+      - name: Set up MSYS2 + GCC
+        uses: msys2/setup-msys2@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            burner/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('burner/Cargo.lock', 'burner/Cargo.toml') }}
-          restore-keys: ${{ runner.os }}-cargo-
+          msystem: MINGW64
+          update: true
+          install: mingw-w64-x86_64-gcc
 
-      - name: Build release .exe
-        shell: pwsh
+      - name: Build .exe with GCC
+        shell: msys2 {0}
         working-directory: burner
         run: |
-          cargo build --release
-          if (Test-Path target\release\NovatOSBurner.exe) {
-            $size = [math]::Round((Get-Item target\release\NovatOSBurner.exe).Length / 1MB, 2)
-            Write-Host "NovatOSBurner.exe built successfully ($size MB)"
-          } else {
-            Write-Error "NovatOSBurner.exe not found!"
+          gcc -o NovatOSBurner.exe src/main.c \
+            -lgdi32 -lcomctl32 -lcomdlg32 \
+            -mwindows -O2 -s -static
+          if [ -f NovatOSBurner.exe ]; then
+            ls -la NovatOSBurner.exe
+            echo "Build OK"
+          else
+            echo "Build FAILED"
             exit 1
-          }
+          fi
 
       - name: Upload .exe artifact
         uses: actions/upload-artifact@v4
         with:
           name: NovatOSBurner-exe
-          path: burner/target/release/NovatOSBurner.exe
+          path: burner/NovatOSBurner.exe
           retention-days: 30
 
       - name: Publish .exe to latest release
@@ -60,12 +56,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Wait up to 5 minutes for the ISO build to create a release
-          $retries = 30
+          # Wait up to 10 minutes for the ISO build to create a release
+          $retries = 60
           $release = $null
           while ($retries -gt 0) {
             try {
-              $release = gh release view --repo $env:GITHUB_REPOSITORY --json tagName,uploadUrl 2>$null | ConvertFrom-Json
+              $release = gh release view --repo $env:GITHUB_REPOSITORY --json tagName 2>$null | ConvertFrom-Json
               if ($release -and $release.tagName) {
                 break
               }
@@ -77,8 +73,8 @@ jobs:
 
           if ($release) {
             Write-Host "Uploading NovatOSBurner.exe to release: $($release.tagName)"
-            gh release upload $release.tagName burner/target/release/NovatOSBurner.exe --repo $env:GITHUB_REPOSITORY --clobber
+            gh release upload $release.tagName burner/NovatOSBurner.exe --repo $env:GITHUB_REPOSITORY --clobber
           } else {
             Write-Host "No existing release found — creating a new one for the burner"
-            gh release create "burner-${{ github.run_number }}" burner/target/release/NovatOSBurner.exe --repo $env:GITHUB_REPOSITORY --title "NovatOS Burner (Build ${{ github.run_number }})" --notes "Windows USB burner .exe (Rust)"
+            gh release create "burner-${{ github.run_number }}" burner/NovatOSBurner.exe --repo $env:GITHUB_REPOSITORY --title "NovatOS Burner (Build ${{ github.run_number }})" --notes "Windows USB burner .exe (C + Win32 API)"
           }
