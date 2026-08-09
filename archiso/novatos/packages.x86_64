@@ -1,16 +1,14 @@
 #
-# NovatOS package list (x86_64) — Lean Edition
-# =============================================
-# All packages verified against 2026 Arch Linux repos.
-# Heavy creative/office/VM tools removed — users install via Discover post-install.
-#
+# NovatOS package list (x86_64) — Lean Hyprland Edition
+# ======================================================
 # Design goals:
-#   - Modern Plasma 6 desktop (Wayland)
-#   - All GPU drivers (AMD, Intel, NVIDIA open)
-#   - Gaming-ready (Steam + Proton + Wine)
-#   - VM guest tools (VMware + VirtualBox) for testing
+#   - Hyprland desktop (~250MB RAM, Windows 11-style with waybar + wofi)
+#   - bauh app store (AUR + Flatpak + Snap + AppImage — one-click installs)
+#   - NO heavy pre-installed apps (Steam, LibreOffice, etc. → via bauh)
+#   - All GPU drivers (AMD, Intel, NVIDIA) + software rendering fallback
+#   - 2009-2026 hardware support (linux-lts kernel)
 #   - BIOS + UEFI hybrid boot
-#   - Target ISO size: ~3-3.5 GB (down from 6.5 GB)
+#   - Target ISO size: ~2-2.5 GB
 #
 
 # ---------- Base system ----------
@@ -29,12 +27,7 @@ pacman-contrib
 reflector
 haveged
 
-# ---------- CRITICAL: archiso + mkinitcpio-archiso (provides live-boot initramfs hooks) ----------
-# `archiso` = the build tool (also provides runtime files)
-# `mkinitcpio-archiso` = the initramfs hooks (archiso, archiso_loop_mnt, archiso_pxe_*)
-# `mkinitcpio-nfs-utils` = NFS boot support (needed by archiso_pxe_nfs hook)
-# `nbd` = network block device (needed by archiso_pxe_nbd hook)
-# Without these, the initramfs CANNOT boot as a live system!
+# ---------- CRITICAL: archiso + mkinitcpio-archiso (live-boot hooks) ----------
 archiso
 mkinitcpio-archiso
 mkinitcpio-nfs-utils
@@ -56,7 +49,7 @@ lvm2
 mdadm
 parted
 
-# ---------- Bootloader / ISO ----------
+# ---------- Bootloader ----------
 grub
 efibootmgr
 os-prober
@@ -72,7 +65,6 @@ openssh
 # ---------- Network ----------
 networkmanager
 modemmanager
-plasma-nm
 iwd
 wireless_tools
 wpa_supplicant
@@ -94,127 +86,64 @@ wireplumber
 sof-firmware
 alsa-firmware
 alsa-utils
-alsa-tools
 alsa-plugins
 pavucontrol
 
 # ---------- Bluetooth ----------
 bluez
 bluez-utils
-bluez-cups
 bluedevil
 
-# ---------- X / Wayland ----------
-xorg-server
-xorg-xinit
-xorg-xhost
-xorg-xrandr
-xorg-xinput
-xorg-xset
-xorg-xsetroot
-xorg-xrdb
-xorg-xev
-xorg-xkill
-xorg-xprop
-xorg-xbacklight
-xorg-fonts-encodings
-xorg-mkfontscale
+# ---------- Wayland + X11 fallback ----------
 xorg-xwayland
 wayland
 wayland-protocols
 xdg-desktop-portal
-xdg-desktop-portal-kde
+xdg-desktop-portal-hyprland
+xdg-desktop-portal-gtk
 xdg-utils
-qt6-wayland
 
-# ---------- KDE Plasma 6 desktop (default, ~600-800MB RAM) ----------
-plasma
-plasma-desktop
-plasma-workspace
-plasma-workspace-wallpapers
-plasma-pa
-plasma-disks
-plasma-firewall
-plasma-systemmonitor
-plasma-thunderbolt
-plasma-vault
-plasma-browser-integration
-plasma-welcome
-plasma-sdk
-kinfocenter
-kgamma
-kwallet-pam
-kwalletmanager
-kmenuedit
-kde-gtk-config
-kdeconnect
-kdecoration
-sddm
-sddm-kcm
-breeze
-breeze-gtk
-breeze-plymouth
-oxygen
-oxygen-icons
-oxygen-sounds
-kded
-
-# ---------- Lightweight desktop alternative: Hyprland (~200-300MB RAM) ----------
-# Modern Wayland compositor with animations, blur, and a sleek aesthetic.
-# Selected at the SDDM login screen → "Hyprland" session.
-# Ideal for older hardware (2009+) or users who want maximum performance.
+# ---------- Hyprland desktop (primary, ~250MB RAM) ----------
 hyprland
+hyprcursor
+hyprlang
+hyprutils
+hyprpaper
+dunst
 foot
 wofi
 waybar
+kanshi
+wl-clipboard
+cliphist
+polkit-kde-agent
+qt5-wayland
+qt6-wayland
+qt5ct
+qt6ct
+qt6-svg
+qt6-declarative
+
+# ---------- Sway (fallback for unsupported GPUs — software rendering) ----------
 sway
 swaybg
 swaylock
 swayidle
-kanshi
-mako
-polkit-kde-agent
 
-# ---------- X11 fallback for Hyprland/Sway (needed for some apps) ----------
+# ---------- Display manager ----------
+sddm
 
-# ---------- KDE applications (core only) ----------
-dolphin
-dolphin-plugins
-konsole
-kate
-kwrite
-kcalc
-ark
-gwenview
-spectacle
-okular
-kfind
-khelpcenter
-yakuake
-
-# ---------- Discover (app store — users install heavy apps from here) ----------
-discover
-packagekit-qt6
-archlinux-appstream-data
-flatpak
-fwupd
-
-# ---------- Themes / fonts / icons (lean — removed CJK fonts to save ~300MB) ----------
+# ---------- Themes / fonts / icons ----------
 noto-fonts
 noto-fonts-emoji
 ttf-dejavu
 ttf-liberation
 gnu-free-fonts
 papirus-icon-theme
-kvantum
-qt5ct
-qt6ct
-qt6-svg
-qt6-declarative
-qt6-multimedia
 materia-gtk-theme
+kvantum
 
-# ---------- Hardware drivers (all vendors — user requirement) ----------
+# ---------- Hardware drivers (ALL vendors + software fallback) ----------
 mesa
 libglvnd
 libva
@@ -233,10 +162,8 @@ lib32-vulkan-icd-loader
 lib32-mesa
 lib32-libglvnd
 libva-utils
-vdpauinfo
 glxinfo
 mesa-demos
-# NVIDIA open kernel modules (precompiled for linux + linux-zen)
 nvidia-open
 nvidia-utils
 nvidia-settings
@@ -245,22 +172,14 @@ lib32-nvidia-utils
 
 # ---------- Input devices ----------
 xf86-input-libinput
-xf86-input-evdev
-xf86-input-void
 libinput
-python-libevdev
 
-# ---------- Print / scan (lean — removed foomatic DBs) ----------
+# ---------- Print / scan ----------
 cups
 cups-filters
-cups-pk-helper
 system-config-printer
-print-manager
-ghostscript
-gsfonts
 sane
 sane-airscan
-simple-scan
 
 # ---------- Power management ----------
 acpi
@@ -269,12 +188,13 @@ power-profiles-daemon
 upower
 thermald
 cpupower
+brightnessctl
 
-# ---------- VM guest tools (for VMware/VirtualBox/QEMU testing) ----------
+# ---------- VM guest tools ----------
 open-vm-tools
 virtualbox-guest-utils
 
-# ---------- System tools (lean) ----------
+# ---------- System tools ----------
 htop
 btop
 fastfetch
@@ -287,7 +207,6 @@ unzip
 zip
 p7zip
 unrar
-xz
 zstd
 tree
 which
@@ -302,21 +221,16 @@ fzf
 tmux
 man-db
 diffutils
-patch
 make
 gcc
 pkgconf
-cmake
-ninja
-lsof
 
 # ---------- Browser ----------
 firefox
 firefox-i18n-en-us
 firefox-ublock-origin
 
-# ---------- Media playback (lean — removed kdenlive, obs, krita, gimp, etc.) ----------
-vlc
+# ---------- Media playback (core only) ----------
 mpv
 ffmpeg
 ffmpegthumbnailer
@@ -325,29 +239,16 @@ gst-plugins-good
 gst-plugins-bad
 gst-plugins-ugly
 gst-libav
-gst-plugin-pipewire
 
 # ---------- Installer ----------
 archinstall
-qt5-translations
-qt6-translations
-polkit-qt5
-polkit-qt6
 
-# ---------- Gaming (kept — user requirement) ----------
-steam
-gamemode
-lib32-gamemode
-gamescope
-mangohud
-lib32-mangohud
-wine
-wine-gecko
-wine-mono
-winetricks
-protontricks
+# ---------- App store: bauh (installed post-boot via first-run script) ----------
+# bauh, snapd, appimage-launcher are AUR-only — installed by novatos-first-run.
+# flatpak is in official repos and pre-installed:
+flatpak
 
-# ---------- Codecs (lean — removed rare ones) ----------
+# ---------- Codecs ----------
 aom
 dav1d
 faac
@@ -364,22 +265,19 @@ xvidcore
 libvorbis
 libvpx
 
-# ---------- Security (lean — kept firewall, removed AV/rootkit scanner) ----------
+# ---------- Security ----------
 ufw
 gufw
 firewalld
-firewall-config
 gnome-keyring
 libsecret
 seahorse
 
-# ---------- Misc utilities (lean) ----------
+# ---------- Misc utilities ----------
 appstream
 appstream-qt
-brightnessctl
 dmidecode
 ethtool
-fprintd
 gvfs
 gvfs-mtp
 gvfs-gphoto2
@@ -391,8 +289,6 @@ net-tools
 numlockx
 pv
 python-pip
-python-pyqt5
-python-pyqt6
 sshfs
 usbutils
 wmctrl
@@ -404,4 +300,3 @@ zsh
 zsh-completions
 zsh-autosuggestions
 zsh-syntax-highlighting
-fish

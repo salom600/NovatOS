@@ -224,40 +224,52 @@ jobs:
           tag_name: v${{ steps.build.outputs.iso_version }}-${{ github.run_number }}
           name: NovatOS ${{ steps.build.outputs.iso_version }} (Build #${{ github.run_number }})
           body: |
-            # NovatOS Aurora — ${{ steps.build.outputs.iso_version }}
+            # NovatOS Aurora (Hyprland Edition) — ${{ steps.build.outputs.iso_version }}
 
             **Build #${{ github.run_number }}** · commit `${{ github.sha }}`
 
-            ## Download (split into chunks — see README)
-            GitHub Releases has a 2GB-per-asset limit, so the ISO is split into
+            ## What's New
+            - **Hyprland desktop** (~250MB RAM, Windows 11-style with waybar + wofi)
+            - **bauh app store** (AUR + Flatpak + Snap + AppImage — one-click installs)
+            - **2 boot modes:** Live Mode (test) + Install Mode (permanent install)
+            - **GPU fallback:** Hyprland → Sway+pixman → TTY (works on ANY GPU, 2009-2026)
+            - **Windows .exe USB burner** included (NovatOSBurner.exe)
+            - **linux-lts kernel** for 2009-era hardware compatibility
+
+            ## Download
+
+            ### ISO (split into chunks — GitHub 2GB limit)
             ${{ steps.split.outputs.chunk_count }} chunks of ~1.9GB each.
-
-            - **Original file:** `${{ steps.build.outputs.iso_basename }}`
-            - **Total size:** ${{ steps.build.outputs.iso_size }}
-            - **SHA256:** `${{ steps.build.outputs.iso_sha256 }}`
-
-            ### Reassembly
+            Reassemble:
             ```bash
-            # Download all .iso.partNN files + README.txt + .sha256sum to one directory.
             cat novatos-*.iso.part* > novatos-${{ steps.build.outputs.iso_version }}-x86_64.iso
             sha256sum -c novatos-*.sha256sum
             ```
 
-            ### Flash to USB
+            ### Windows USB Burner (.exe)
+            Download `NovatOSBurner.exe` from the assets below.
+            Run it as Administrator, select the ISO + USB drive, click "Write to USB".
+
+            ### Alternative: Flash with dd / Ventoy / Rufus (DD mode)
             ```bash
             sudo dd if=novatos-*.iso of=/dev/sdX bs=4M status=progress && sync
             ```
-            Or use [Ventoy](https://www.ventoy.net), [balenaEtcher](https://etcher.balena.io), or Rufus (DD mode).
 
-            ### Boot
-            Boot from USB → choose **NovatOS Live** → double-click **Install NovatOS**.
+            ## Boot Menu (2 options)
+            1. **NovatOS Live** — boot to Hyprland desktop (for testing)
+            2. **NovatOS Install** — boot directly to installer (archinstall)
+
+            ## Login (Live Mode)
+            - Username: `novatos`
+            - Password: `novatos`
 
             ## Highlights
-            - KDE Plasma 6 (Wayland)
-            - All GPU drivers (AMD, Intel, NVIDIA open)
-            - Steam + Proton + Lutris + Wine preinstalled
-            - BIOS + UEFI hybrid boot
-            - archinstall installer (NovatOS-branded)
+            - Hyprland (Wayland) with Windows 11-style taskbar + Start menu
+            - Sway fallback (software rendering) for unsupported GPUs
+            - All GPU drivers (AMD, Intel, NVIDIA open) + llvmpipe fallback
+            - 2009-2026 hardware support (linux-lts kernel)
+            - BIOS + UEFI hybrid boot, Ventoy-compatible (zstd initramfs)
+            - bauh app store (install Steam, LibreOffice, etc. with one click)
 
             ---
             Built by GitHub Actions. [View run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})

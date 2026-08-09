@@ -1,0 +1,170 @@
+/* NovatOS Waybar CSS — Windows 11 taskbar style */
+* {
+    border: none;
+    border-radius: 0;
+    font-family: "Noto Sans", "DejaVu Sans", sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    min-height: 0;
+}
+
+window#waybar {
+    background-color: rgba(15, 17, 23, 0.85);
+    color: #ffffff;
+    border-top: 1px solid rgba(76, 194, 255, 0.2);
+    transition-property: background-color;
+    transition-duration: 0.3s;
+}
+
+#workspaces {
+    background-color: transparent;
+    padding: 0 6px;
+}
+
+#workspaces button {
+    padding: 0 10px;
+    background-color: transparent;
+    color: #9DB7E0;
+    border-radius: 6px;
+    margin: 4px 2px;
+    transition: all 0.2s;
+}
+
+#workspaces button:hover {
+    background: rgba(76, 194, 255, 0.2);
+    color: #ffffff;
+}
+
+#workspaces button.active {
+    background: rgba(76, 194, 255, 0.3);
+    color: #4CC2FF;
+    box-shadow: inset 0 -2px 0 #4CC2FF;
+}
+
+#wlr/taskbar {
+    padding: 0 4px;
+}
+
+#wlr/taskbar button {
+    padding: 2px 6px;
+    background: transparent;
+    border-radius: 6px;
+    margin: 4px 2px;
+}
+
+#wlr/taskbar button:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+#wlr/taskbar button.active {
+    background: rgba(76, 194, 255, 0.15);
+    box-shadow: inset 0 -2px 0 #4CC2FF;
+}
+
+#window {
+    color: #ffffff;
+    padding: 0 12px;
+    font-weight: 500;
+}
+
+#tray {
+    padding: 0 8px;
+}
+
+#tray > * {
+    padding: 0 4px;
+}
+
+#clock {
+    background-color: rgba(76, 194, 255, 0.1);
+    color: #4CC2FF;
+    padding: 0 12px;
+    border-radius: 8px;
+    margin: 4px 4px;
+    font-weight: 600;
+}
+
+#pulseaudio {
+    color: #9DB7E0;
+    padding: 0 10px;
+    border-radius: 8px;
+    margin: 4px 2px;
+}
+
+#pulseaudio:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+#pulseaudio.muted {
+    color: #FF6B6B;
+}
+
+#network {
+    color: #9DB7E0;
+    padding: 0 10px;
+    border-radius: 8px;
+    margin: 4px 2px;
+}
+
+#network:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+#network.disconnected {
+    color: #FF6B6B;
+}
+
+#bluetooth {
+    color: #9DB7E0;
+    padding: 0 10px;
+    border-radius: 8px;
+    margin: 4px 2px;
+}
+
+#bluetooth:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+#bluetooth.off {
+    color: #FF6B6B;
+}
+
+#battery {
+    color: #9DB7E0;
+    padding: 0 10px;
+    border-radius: 8px;
+    margin: 4px 2px;
+}
+
+#battery:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+#battery.warning {
+    color: #FFB347;
+}
+
+#battery.critical {
+    color: #FF6B6B;
+    animation: blink 1s infinite;
+}
+
+#battery.charging {
+    color: #4CC2FF;
+}
+
+@keyframes blink {
+    50% { opacity: 0.5; }
+}
+
+#custom-power {
+    color: #FF6B6B;
+    padding: 0 12px;
+    border-radius: 8px;
+    margin: 4px 4px;
+    font-size: 16px;
+}
+
+#custom-power:hover {
+    background: rgba(255, 107, 107, 0.2);
+}

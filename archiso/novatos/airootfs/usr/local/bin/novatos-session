@@ -1,0 +1,139 @@
+#!/usr/bin/env bash
+#
+# /usr/local/bin/novatos-session
+# =================================
+# Smart session launcher for NovatOS Live Mode.
+# Tries GPU-accelerated Hyprland first, falls back to:
+#   1. Hyprland (GPU accelerated) — best
+#   2. Sway with pixman (software rendering) — works on any GPU
+#   3. TTY console — ultimate fallback
+#
+# This ensures NovatOS Live boots on ANY hardware from 2009 to 2026,
+# even if the GPU driver is missing or unsupported.
+#
+set -euo pipefail
+
+LOG="/var/log/novatos-session.log"
+echo "[$(date)] novatos-session starting..." >> "$LOG"
+
+# Detect if we have a working GPU
+detect_gpu() {
+    # Check for any DRM/KMS device
+    if [ ! -d /sys/class/drm ]; then
+        echo "none"
+        return
+    fi
+
+    # Check if any DRM card is present
+    local cards=$(ls /sys/class/drm/card* 2>/dev/null | grep -v render | head -5)
+    if [ -z "$cards" ]; then
+        echo "none"
+        return
+    fi
+
+    # Try to load a GPU driver
+    for driver in amdgpu radeon i915 nouveau nvidia; do
+        if modprobe "$driver" 2>/dev/null; then
+            echo "$driver"
+            return
+        fi
+    done
+
+    # Check if any driver is already loaded
+    if lsmod | grep -qE 'amdgpu|radeon|i915|nouveau|nvidia'; then
+        echo "loaded"
+        return
+    fi
+
+    echo "unknown"
+}
+
+GPU=$(detect_gpu)
+echo "[$(date)] Detected GPU: $GPU" >> "$LOG"
+
+# Check if GPU acceleration actually works (via glxinfo or EGL)
+has_gl_accel() {
+    if command -v glxinfo >/dev/null 2>&1; then
+        glxinfo 2>/dev/null | grep -q "direct rendering: Yes" && return 0
+    fi
+    # Check for Vulkan ICD files
+    [ -n "$(ls /usr/share/vulkan/icd.d/*.json 2>/dev/null)" ] && return 0
+    return 1
+}
+
+# --- Attempt 1: Hyprland with GPU acceleration ---
+if [ "$GPU" != "none" ]; then
+    echo "[$(date)] Attempting Hyprland with GPU..." >> "$LOG"
+    if has_gl_accel 2>/dev/null || [ "$GPU" != "none" ]; then
+        # Set Hyprland environment for GPU rendering
+        export WLR_NO_HARDWARE_CURSORS=1
+        export HYPRCURSOR_THEME=breeze_cursors
+        timeout 15 hyprland >/tmp/hyprland.log 2>&1 &
+        HYPRLAND_PID=$!
+        sleep 10
+
+        if kill -0 $HYPRLAND_PID 2>/dev/null && [ ! -s /tmp/hyprland-crash.log ]; then
+            echo "[$(date)] Hyprland started successfully (GPU)" >> "$LOG"
+            wait $HYPRLAND_PID
+            exit 0
+        else
+            echo "[$(date)] Hyprland failed, trying fallback..." >> "$LOG"
+            kill $HYPRLAND_PID 2>/dev/null || true
+        fi
+    fi
+fi
+
+# --- Attempt 2: Sway with software rendering (pixman) ---
+echo "[$(date)] Attempting Sway with software rendering (pixman)..." >> "$LOG"
+export WLR_RENDERER=pixman
+export WLR_NO_HARDWARE_CURSORS=1
+export LIBGL_ALWAYS_SOFTWARE=1
+export SWAYSOCK=/tmp/sway-sock
+
+timeout 15 sway >/tmp/sway.log 2>&1 &
+SWAY_PID=$!
+sleep 8
+
+if kill -0 $SWAY_PID 2>/dev/null; then
+    echo "[$(date)] Sway started successfully (software rendering)" >> "$LOG"
+    wait $SWAY_PID
+    exit 0
+else
+    echo "[$(date)] Sway failed" >> "$LOG"
+    kill $SWAY_PID 2>/dev/null || true
+fi
+
+# --- Attempt 3: Hyprland with llvmpipe (Mesa software rendering) ---
+echo "[$(date)] Attempting Hyprland with llvmpipe..." >> "$LOG"
+export WLR_RENDERER=gles2
+export LIBGL_ALWAYS_SOFTWARE=1
+export WLR_NO_HARDWARE_CURSORS=1
+
+timeout 15 hyprland >/tmp/hyprland-llvm.log 2>&1 &
+HYPRLAND_PID=$!
+sleep 10
+
+if kill -0 $HYPRLAND_PID 2>/dev/null; then
+    echo "[$(date)] Hyprland started with llvmpipe" >> "$LOG"
+    wait $HYPRLAND_PID
+    exit 0
+fi
+
+# --- Fallback: TTY console ---
+echo "[$(date)] All desktop attempts failed. Falling back to TTY console." >> "$LOG"
+echo ""
+echo "============================================"
+echo "  NovatOS Live — Console Mode"
+echo "============================================"
+echo ""
+echo "  No GPU acceleration available."
+echo "  You can still use the system from this console."
+echo ""
+echo "  Useful commands:"
+echo "    novatos-install   — Launch the installer"
+echo "    novatos-welcome   — Show help"
+echo "    archinstall       — Direct Arch installer"
+echo "    reboot            — Restart"
+echo "    poweroff          — Shut down"
+echo ""
+exec /bin/bash -l

@@ -3,9 +3,8 @@
 # /root/customize_airootfs.sh
 # ===========================
 # Run by archiso INSIDE the airootfs chroot, AFTER all packages are installed.
-# This is the master customization script for the NovatOS live ISO.
+# This is the master customization script for the NovatOS Hyprland live ISO.
 #
-# All paths are absolute from the chroot's root.
 set -euo pipefail
 
 echo "==> [NovatOS] customize_airootfs.sh starting..."
@@ -14,13 +13,10 @@ echo "==> [NovatOS] customize_airootfs.sh starting..."
 echo "==> [NovatOS] Generating locales..."
 sed -i 's/^#\(en_US\.UTF-8\)/\1/' /etc/locale.gen
 locale-gen
-
-echo "==> [NovatOS] Setting timezone to UTC..."
 ln -sf /usr/share/zoneinfo/UTC /etc/localtime
 
 # ---------- Users ----------
 echo "==> [NovatOS] Creating novatos user..."
-# Default live password is 'novatos' for both root and novatos user.
 groupadd -f wheel
 if ! id -u novatos >/dev/null 2>&1; then
     useradd -m -G wheel,storage,optical,network,video,audio,input -s /usr/bin/zsh -u 1000 novatos
@@ -40,7 +36,7 @@ chmod 440 /etc/sudoers.d/10-novatos-live
 
 # ---------- pacman mirrorlist ----------
 echo "==> [NovatOS] Refreshing mirrorlist..."
-reflector --protocol https --latest 50 --sort rate \
+reflector --protocol https --latest 30 --sort rate \
           --save /etc/pacman.d/mirrorlist --download-timeout 5 2>/dev/null || \
     echo "  [warn] reflector failed; keeping default mirrorlist"
 
@@ -59,56 +55,44 @@ SERVICES=(
     haveged
     fwupd
     power-profiles-daemon
-    libvirtd
-    docker
 )
 for svc in "${SERVICES[@]}"; do
     systemctl enable "${svc}" 2>/dev/null || \
-        echo "  [warn] could not enable ${svc} — package may be missing"
+        echo "  [warn] could not enable ${svc}"
 done
-
-# Socket-activated services (preferred over .service for these)
 for sock in cups sshd avahi-daemon; do
     systemctl enable "${sock}.socket" 2>/dev/null || true
 done
 
-# ---------- SDDM autologin (Plasma Wayland on live boot) ----------
-echo "==> [NovatOS] Enabling SDDM autologin for Plasma Wayland..."
+# ---------- SDDM autologin (Hyprland on live boot) ----------
+echo "==> [NovatOS] Enabling SDDM autologin for Hyprland..."
 mkdir -p /etc/sddm.conf.d
 cat > /etc/sddm.conf.d/autologin.conf <<'EOF'
 [Autologin]
 User=novatos
-Session=plasmawayland
+Session=hyprland
 EOF
 
-# ---------- Plymouth / boot splash ----------
-echo "==> [NovatOS] Configuring plymouth..."
-mkdir -p /etc/plymouth
-cat > /etc/plymouth/plymouthd.conf <<'EOF'
-[Daemon]
-Theme=breeze
-ShowDelay=2
-DeviceTimeout=8
+# ---------- SDDM theme ----------
+cat > /etc/sddm.conf.d/theme.conf <<'EOF'
+[Theme]
+Current=
+
+[Users]
+RememberLastUser=true
 EOF
 
-# ---------- mkinitcpio ----------
-# The profile provides two mkinitcpio config files:
-#   1. archiso/novatos/mkinitcpio.conf → /etc/mkinitcpio.conf (base MODULES, empty HOOKS)
-#   2. airootfs/etc/mkinitcpio.conf.d/archiso.conf → HOOKS with `archiso` live-boot hook
-#
-# The drop-in (archiso.conf) overrides HOOKS with the full live-boot hook list
-# including `archiso`, `archiso_loop_mnt`, `archiso_pxe_*`, etc.
-#
-# We do NOT touch mkinitcpio config here — the profile's files are correct.
-echo "==> [NovatOS] mkinitcpio configured via profile (archiso.conf drop-in with live-boot hooks)"
-
-# ---------- pacman init ----------
-echo "==> [NovatOS] Initializing pacman keyring..."
-pacman-key --init
-pacman-key --populate archlinux
+# ---------- Polkit ----------
+mkdir -p /etc/polkit-1/rules.d
+cat > /etc/polkit-1/rules.d/10-novatos-live.rules <<'EOF'
+polkit.addRule(function(action, subject) {
+    if (subject.isInGroup("wheel")) {
+        return polkit.Result.YES;
+    }
+});
+EOF
 
 # ---------- NetworkManager ----------
-echo "==> [NovatOS] Configuring NetworkManager..."
 mkdir -p /etc/NetworkManager/system-connections
 cat > /etc/NetworkManager/conf.d/10-novatos.conf <<'EOF'
 [main]
@@ -121,20 +105,7 @@ uri=https://www.archlinux.org/check_network_status.txt
 interval=300
 EOF
 
-# ---------- Polkit: allow wheel to manage without password on live ----------
-mkdir -p /etc/polkit-1/rules.d
-cat > /etc/polkit-1/rules.d/10-novatos-live.rules <<'EOF'
-// Allow members of the wheel group to perform administrative actions
-// without authentication on the live ISO.
-polkit.addRule(function(action, subject) {
-    if (subject.isInGroup("wheel")) {
-        return polkit.Result.YES;
-    }
-});
-EOF
-
-# ---------- ZSH default for new users ----------
-mkdir -p /etc/skel
+# ---------- ZSH default ----------
 cat > /etc/skel/.zshrc <<'EOF'
 # ~/.zshrc — NovatOS default
 autoload -Uz compinit && compinit -d ~/.cache/zcompdump
@@ -146,97 +117,131 @@ HISTSIZE=10000
 SAVEHIST=10000
 setopt appendhistory sharehistory hist_ignore_dups hist_ignore_space
 
-# Plugins (installed via system packages)
 source /usr/share/zsh/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh 2>/dev/null
 source /usr/share/zsh/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh 2>/dev/null
 
-# Aliases
-alias ls='exa --group-directories-first'
-alias ll='exa -la --group-directories-first --git'
-alias la='exa -a --group-directories-first'
-alias cat='bat --paging=never'
-alias grep='ripgrep'
-alias find='fd'
+alias ls='ls --color=auto --group-directories-first'
+alias ll='ls -la --color=auto --group-directories-first'
+alias la='ls -A --color=auto'
+alias grep='grep --color=auto'
 alias ..='cd ..'
 alias ...='cd ../..'
 alias update='sudo pacman -Syu'
 alias install='sudo pacman -S'
 alias remove='sudo pacman -Rns'
 alias search='pacman -Ss'
-alias aur='paru'
-alias flatinstall='flatpak install'
-alias flatrun='flatpak run'
+alias store='bauh'
 alias fastfetch='fastfetch'
 
-# Prompt
 PROMPT='%F{cyan}%~%f %F{green}❯%f '
 RPROMPT='%(?..%F{red}[%?] %f)'
 
-# Welcome
-if [ -z "$NOVATOS_NOBANNER" ]; then
-    command -v fastfetch >/dev/null && fastfetch
-fi
+command -v fastfetch >/dev/null && [ -z "$NOVATOS_NOBANNER" ] && fastfetch
 EOF
 
-# Bash config (fallback)
+# ---------- Bash fallback ----------
 cat > /etc/skel/.bashrc <<'EOF'
-# ~/.bashrc — NovatOS default
 [[ $- != *i* ]] && return
 
 alias ls='ls --color=auto --group-directories-first'
 alias ll='ls -la --color=auto --group-directories-first'
 alias la='ls -A --color=auto'
-alias l='ls -CF --color=auto'
 alias grep='grep --color=auto'
-alias egrep='egrep --color=auto'
-alias fgrep='fgrep --color=auto'
-alias cp='cp -i'
-alias mv='mv -i'
-alias rm='rm -i'
 alias ..='cd ..'
 alias ...='cd ../..'
 alias update='sudo pacman -Syu'
 alias install='sudo pacman -S'
 alias remove='sudo pacman -Rns'
 alias search='pacman -Ss'
+alias store='bauh'
 
 PS1='\[\e[1;36m\]\u@\h\[\e[0m\] \[\e[1;34m\]\w\[\e[0m\] \$ '
 
 command -v fastfetch >/dev/null && [ -z "$NOVATOS_NOBANNER" ] && fastfetch
 EOF
 
-# ---------- Welcome desktop entry (Install NovatOS via archinstall) ----------
+# ---------- Install Mode auto-launch ----------
+# When novatos.install=1 is passed as kernel param, auto-launch the installer
+# instead of the desktop.
+mkdir -p /etc/systemd/system
+cat > /etc/systemd/system/novatos-install.service <<'EOF'
+[Unit]
+Description=NovatOS Installer (auto-launch in Install Mode)
+After=systemd-user-sessions.service
+ConditionKernelCommandLine=novatos.install
+
+[Service]
+Type=idle
+ExecStart=/usr/local/bin/novatos-install
+StandardInput=tty
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+User=root
+WorkingDirectory=/root
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl enable novatos-install.service 2>/dev/null || true
+
+# ---------- First-run check service ----------
+cat > /usr/local/bin/novatos-first-run-check <<'EOF'
+#!/usr/bin/env bash
+# Runs novatos-first-run on first boot if not already done
+if [ ! -f /etc/novatos-first-run-done ]; then
+    sleep 3  # wait for desktop to settle
+    sudo -E novatos-first-run 2>/dev/null &
+fi
+EOF
+chmod +x /usr/local/bin/novatos-first-run-check
+
+# ---------- Desktop entries ----------
 mkdir -p /etc/skel/Desktop
+
 cat > /etc/skel/Desktop/novatos-install.desktop <<'EOF'
 [Desktop Entry]
 Type=Application
 Name=Install NovatOS
 Name[ar]=تثبيت NovatOS
-Comment=Launch the NovatOS system installer (archinstall)
-Comment[ar]=ابدأ مثبت نظام NovatOS
+Comment=Launch the NovatOS installer
 Icon=novatos-installer
-Exec=sudo novatos-installer
-Terminal=true
+Exec=foot -e sudo novatos-install
+Terminal=false
 Categories=System;
 StartupNotify=true
 EOF
 chmod +x /etc/skel/Desktop/novatos-install.desktop
 
+cat > /etc/skel/Desktop/novatos-store.desktop <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=App Store (bauh)
+Comment=Install apps from AUR, Flatpak, Snap, AppImage
+Icon=novatos
+Exec=bauh
+Terminal=false
+Categories=System;
+StartupNotify=true
+EOF
+chmod +x /etc/skel/Desktop/novatos-store.desktop
+
 # ---------- Ensure executable bits ----------
 chmod +x /usr/local/bin/* 2>/dev/null || true
 
 # ---------- Final cleanup ----------
-echo "==> [NovatOS] Cleaning up build artifacts..."
+echo "==> [NovatOS] Cleaning up..."
 rm -f /var/cache/pacman/pkg/*.pkg.tar.zst 2>/dev/null || true
 
 # ---------- Banner ----------
 cat > /etc/novatos-release <<'EOF'
-NovatOS 2026 "Aurora" (Live ISO)
+NovatOS 2026 "Aurora" (Hyprland Edition)
 Built on Arch Linux
-Edition: Plasma 6 / Wayland / x86_64
+Desktop: Hyprland (Wayland) + Sway (fallback)
+Installer: archinstall
+App Store: bauh (AUR + Flatpak + Snap + AppImage)
 Homepage: https://github.com/salom600/NovatOS
 EOF
-
 ln -sf /etc/novatos-release /etc/os-release 2>/dev/null || true
 
 echo "==> [NovatOS] customize_airootfs.sh done."

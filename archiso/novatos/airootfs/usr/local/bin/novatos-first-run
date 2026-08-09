@@ -2,9 +2,8 @@
 #
 # /usr/local/bin/novatos-first-run
 # =================================
-# Triggered by the NovatOS welcome app on first login after install.
-# Sets up AUR helpers, gaming tools, Flathub, driver detection, and removes
-# the live-only sudoers entry.
+# Runs on first login after boot (or after install).
+# Installs: bauh (app store), paru (AUR helper), snapd, Flathub.
 #
 set -euo pipefail
 
@@ -14,45 +13,55 @@ fi
 
 echo "==> [NovatOS] First-run setup starting..."
 
-# 1. Remove the live-only passwordless sudo entry
-echo "==> Removing live-ISO passwordless sudo..."
+# 1. Remove live-only passwordless sudo
 rm -f /etc/sudoers.d/10-novatos-live
 
 # 2. Refresh mirrors
 echo "==> Refreshing pacman mirrors..."
-reflector --protocol https --latest 50 --sort rate \
+reflector --protocol https --latest 30 --sort rate \
           --save /etc/pacman.d/mirrorlist --download-timeout 5 || true
 
-# 3. Update keyring (avoid stale keys on fresh installs)
-echo "==> Refreshing pacman keyring..."
+# 3. Update keyring
+echo "==> Updating pacman keyring..."
 pacman-key --init
 pacman-key --populate archlinux
-pacman -Sy --noconfirm archlinux-keyring
+pacman -Sy --noconfirm archlinux-keyring || true
 
-# 4. Install paru (AUR helper) if not present
+# 4. Install paru (AUR helper) — needed for bauh, snapd, etc.
 if ! command -v paru >/dev/null 2>&1; then
     echo "==> Installing paru (AUR helper)..."
     pacman -S --needed --noconfirm base-devel git
     sudo -u "${SUDO_USER:-novatos}" bash -c '
         cd /tmp
-        rm -rf paru
-        git clone https://aur.archlinux.org/paru-bin.git paru
-        cd paru
+        rm -rf paru-bin
+        git clone https://aur.archlinux.org/paru-bin.git
+        cd paru-bin
         makepkg -si --noconfirm
     ' || echo "  [warn] paru install failed"
 fi
 
-# 5. Enable Flathub for Discover
+# 5. Install bauh (unified app store: AUR + Flatpak + Snap + AppImage)
+if ! command -v bauh >/dev/null 2>&1; then
+    echo "==> Installing bauh (app store)..."
+    sudo -u "${SUDO_USER:-novatos}" paru -S --noconfirm bauh || echo "  [warn] bauh install failed"
+fi
+
+# 6. Install snapd
+if ! command -v snapd >/dev/null 2>&1; then
+    echo "==> Installing snapd..."
+    sudo -u "${SUDO_USER:-novatos}" paru -S --noconfirm snapd || echo "  [warn] snapd install failed"
+    systemctl enable --now snapd.socket 2>/dev/null || true
+fi
+
+# 7. Enable Flathub for Flatpak
 echo "==> Enabling Flathub..."
 flatpak remote-add --if-not-exists flathub \
     https://flathub.org/repo/flathub.flatpakrepo || true
 
-# 6. GPU driver auto-detection
+# 8. GPU driver auto-detection
 echo "==> Detecting GPU and ensuring correct drivers..."
-lspci -nnk | grep -i vga || true
 if lspci -nnk | grep -i 'vga\|3d\|display' | grep -qi 'nvidia'; then
-    echo "  NVIDIA GPU detected — nvidia drivers already installed"
-    systemctl enable nvidia-{persistenced,fbdev,suspend,resume,hibernate}.service 2>/dev/null || true
+    echo "  NVIDIA GPU detected — nvidia-open already installed"
 fi
 if lspci -nnk | grep -i 'vga\|3d\|display' | grep -qi 'amd'; then
     echo "  AMD GPU detected — mesa/radeon drivers already installed"
@@ -61,19 +70,17 @@ if lspci -nnk | grep -i 'vga\|3d\|display' | grep -qi 'intel'; then
     echo "  Intel GPU detected — mesa/intel-media drivers already installed"
 fi
 
-# 7. Enable libvirtd/virt-manager
-echo "==> Enabling libvirtd..."
+# 9. Enable services
+echo "==> Enabling services..."
 systemctl enable --now libvirtd 2>/dev/null || true
-usermod -aG libvirt "${SUDO_USER:-novatos}" 2>/dev/null || true
-usermod -aG kvm "${SUDO_USER:-novatos}" 2>/dev/null || true
-
-# 8. Enable docker
-echo "==> Enabling docker..."
 systemctl enable --now docker 2>/dev/null || true
-usermod -aG docker "${SUDO_USER:-novatos}" 2>/dev/null || true
 
-# 9. Mark first-run complete so we don't run again
+# 10. Mark first-run complete
 touch /etc/novatos-first-run-done
+echo ""
 echo "==> [NovatOS] First-run setup complete!"
 echo ""
-echo "Reboot recommended to apply group memberships (docker, libvirt, kvm)."
+echo "  bauh (app store) is now available in the application menu."
+echo "  Use it to install: Steam, LibreOffice, games, and more — with one click."
+echo ""
+echo "  Reboot recommended to apply all changes."

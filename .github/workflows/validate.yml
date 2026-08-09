@@ -131,13 +131,11 @@ jobs:
           done
           # Check for the bug that caused "Error preparing initrd: Not found":
           # UEFI entries must NOT reference separate intel-ucode.img / amd-ucode.img
-          # because the `microcode` hook bundles microcode INTO the main initramfs.
-          # Only check actual `initrd` lines (not comments that mention these files).
           if grep -rE '^\s*initrd\s+.*intel-ucode\.img|^\s*initrd\s+.*amd-ucode\.img' archiso/novatos/efiboot/loader/entries/; then
-              echo "::error::UEFI entries reference separate ucode .img files in initrd lines — these don't exist on the ESP (microcode is bundled in initramfs). Remove the intel-ucode.img / amd-ucode.img initrd lines."
+              echo "::error::UEFI entries reference separate ucode .img files in initrd lines"
               exit 1
           fi
-          # UEFI entries must use %ARCH% placeholder (not hardcoded x86_64)
+          # UEFI entries must use %ARCH% placeholder
           if grep -rE '/x86_64/' archiso/novatos/efiboot/loader/entries/; then
               echo "::error::UEFI entries use hardcoded /x86_64/ — should use /%ARCH%/ placeholder"
               exit 1
@@ -149,38 +147,56 @@ jobs:
                   exit 1
               fi
           done
-          # Same ucode check for syslinux (only INITRD lines, not comments)
+          # Same ucode check for syslinux (only INITRD lines)
           if grep -rE '^\s*INITRD\s+.*intel-ucode\.img|^\s*INITRD\s+.*amd-ucode\.img' archiso/novatos/syslinux/; then
-              echo "::error::Syslinux configs reference separate ucode .img files in INITRD lines — these don't exist (microcode is bundled in initramfs)."
+              echo "::error::Syslinux configs reference separate ucode .img files in INITRD lines"
               exit 1
           fi
-          # splash.png must exist (archiso copies it to /boot/syslinux/)
+          # splash.png must exist
           if [ ! -f archiso/novatos/syslinux/splash.png ]; then
               echo "::warning::splash.png missing — syslinux will have no background image"
           fi
           echo "Boot configs OK"
 
-      - name: Check archinstall config (replaces Calamares)
+      - name: Check desktop config
         run: |
-          if [ ! -f archiso/novatos/airootfs/etc/novatos/archinstall-user-configuration.json ]; then
-              echo "::error::archinstall config missing"
+          # Hyprland config must exist
+          if [ ! -f archiso/novatos/airootfs/etc/skel/.config/hypr/hyprland.conf ]; then
+              echo "::error::Missing Hyprland config"
               exit 1
           fi
-          # Validate it parses as JSON
-          python3 -c "import json; json.load(open('archiso/novatos/airootfs/etc/novatos/archinstall-user-configuration.json'))" || {
-              echo "::error::archinstall config is not valid JSON"
+          # Waybar config must exist
+          if [ ! -f archiso/novatos/airootfs/etc/skel/.config/waybar/config ]; then
+              echo "::error::Missing waybar config"
+              exit 1
+          fi
+          echo "Desktop config OK"
+
+      - name: Check burner source
+        run: |
+          if [ ! -f burner/src/main.py ]; then
+              echo "::error::Missing burner/src/main.py"
+              exit 1
+          fi
+          # Validate Python syntax
+          python3 -c "import ast; ast.parse(open('burner/src/main.py').read())" || {
+              echo "::error::burner/src/main.py has syntax errors"
               exit 1
           }
-          echo "archinstall config OK"
+          echo "Burner source OK"
 
       - name: Check branding files
         run: |
-          for f in logo.png icon.png welcome.png; do
-              if [ ! -f "archiso/novatos/airootfs/usr/share/calamares/branding/novatos/$f" ]; then
-                  echo "::error::Missing branding file: $f"
-                  exit 1
-              fi
-          done
+          # Check that the NovatOS icon exists
+          if [ ! -f archiso/novatos/airootfs/usr/share/pixmaps/novatos.png ]; then
+              echo "::error::Missing branding file: novatos.png"
+              exit 1
+          fi
+          # Check wallpaper exists
+          if [ ! -f archiso/novatos/airootfs/usr/share/wallpapers/novatos/NovatOS-Aurora.png ]; then
+              echo "::error::Missing wallpaper"
+              exit 1
+          fi
           echo "Branding files OK"
 
       - name: Summary

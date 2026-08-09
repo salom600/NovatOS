@@ -1,0 +1,95 @@
+{
+    "layer": "top",
+    "position": "bottom",
+    "height": 44,
+    "spacing": 4,
+    "margin-top": 0,
+    "margin-bottom": 0,
+    "modules-left": ["wlr/taskbar", "hyprland/workspaces"],
+    "modules-center": ["hyprland/window"],
+    "modules-right": ["tray", "pulseaudio", "network", "bluetooth", "battery", "clock", "custom/power"],
+
+    "hyprland/workspaces": {
+        "format": "{icon}",
+        "on-click": "activate",
+        "format-icons": {
+            "1": "1",
+            "2": "2",
+            "3": "3",
+            "4": "4",
+            "5": "5",
+            "6": "6",
+            "7": "7",
+            "8": "8",
+            "9": "9",
+            "10": "10"
+        }
+    },
+
+    "wlr/taskbar": {
+        "format": "{icon}",
+        "icon-size": 24,
+        "tooltip-format": "{title}",
+        "on-click": "activate",
+        "on-click-middle": "close",
+        "app_ids-mapping": {}
+    },
+
+    "hyprland/window": {
+        "format": "{}",
+        "max-length": 50
+    },
+
+    "tray": {
+        "icon-size": 20,
+        "spacing": 8
+    },
+
+    "clock": {
+        "format": " {:%H:%M}",
+        "format-alt": " {:%A, %B %d, %Y}",
+        "tooltip-format": "<tt>{calendar}</tt>"
+    },
+
+    "pulseaudio": {
+        "format": "{icon} {volume}%",
+        "format-muted": "󰖁 Muted",
+        "format-icons": {
+            "default": ["󰕿", "󰖀", "󰕾"]
+        },
+        "on-click": "pavucontrol",
+        "scroll-step": 5
+    },
+
+    "network": {
+        "format-wifi": "󰤨 {essid}",
+        "format-ethernet": "󰈀 Connected",
+        "format-disconnected": "󰤭 Offline",
+        "on-click": "nm-connection-editor",
+        "tooltip-format": "{ifname} via {gwaddr}"
+    },
+
+    "bluetooth": {
+        "format": "󰂯",
+        "format-connected": "󰂱 {device_alias}",
+        "format-off": "󰂲 Off",
+        "on-click": "blueman-manager"
+    },
+
+    "battery": {
+        "states": {
+            "warning": 30,
+            "critical": 15
+        },
+        "format": "{icon} {capacity}%",
+        "format-charging": "󰢟 {capacity}%",
+        "format-plugged": "󰚥 {capacity}%",
+        "format-icons": ["󰁺", "󰁻", "󰁼", "󰁽", "󰁾", "󰁿", "󰂀", "󰂁", "󰂂", "󰁹"]
+    },
+
+    "custom/power": {
+        "format": " ⏻ ",
+        "on-click": "wofi --show dmenu --prompt 'Power:' --dmenu --cache-file=/dev/null <<< $'Lock\nLogout\nReboot\nShutdown' | xargs -I{} sh -c 'case \"{}\" in Lock) swaylock;; Logout) hyprctl dispatch exit;; Reboot) systemctl reboot;; Shutdown) systemctl poweroff;; esac'",
+        "tooltip": false
+    }
+}

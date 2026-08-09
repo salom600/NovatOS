@@ -1,0 +1,63 @@
+/* NovatOS Wofi CSS — Windows 11 Start menu style */
+window {
+    margin: 0px;
+    border: 1px solid rgba(76, 194, 255, 0.3);
+    background-color: rgba(15, 17, 23, 0.95);
+    border-radius: 16px;
+    font-family: "Noto Sans", "DejaVu Sans", sans-serif;
+}
+
+#input {
+    margin: 12px;
+    padding: 10px 14px;
+    border: none;
+    border-radius: 10px;
+    background-color: rgba(255, 255, 255, 0.08);
+    color: #ffffff;
+    font-size: 15px;
+}
+
+#input:focus {
+    background-color: rgba(76, 194, 255, 0.15);
+    box-shadow: inset 0 0 0 2px rgba(76, 194, 255, 0.5);
+}
+
+#inner-box {
+    margin: 0 8px 8px 8px;
+    border: none;
+    background-color: transparent;
+}
+
+#outer-box {
+    margin: 0;
+    border: none;
+    background-color: transparent;
+}
+
+#scroll {
+    margin: 0;
+    border: none;
+}
+
+#text {
+    margin: 4px 8px;
+    padding: 8px 10px;
+    color: #ffffff;
+    font-size: 14px;
+}
+
+#entry {
+    margin: 2px 0;
+    border-radius: 10px;
+    background-color: transparent;
+}
+
+#entry:selected {
+    background-color: rgba(76, 194, 255, 0.2);
+    box-shadow: inset 0 0 0 1px rgba(76, 194, 255, 0.4);
+}
+
+#entry:selected #text {
+    color: #4CC2FF;
+    font-weight: 600;
+}

@@ -1,0 +1,20 @@
+## NovatOS Wofi config — Windows 11 Start menu style
+show=drun
+prompt=Search applications...
+filter_rate=50
+allow_markup=true
+no_actions=true
+halign=fill
+orientation=vertical
+content_halign=fill
+hide_scroll=true
+width=500
+lines=10
+image_size=32
+display_generic=false
+columns=1
+sort_order=alphabetical
+cache_file=/dev/null
+term=foot
+normal_window=true
+gtk_dark=true

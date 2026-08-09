@@ -1,9 +1,0 @@
-[ActivityManager]
-_current_activity=4d8f2c9e-7e1a-4c11-9d2a-3b3f4c2d1e0a
-
-[General]
-firstRun=false
-
-[Notifications]
-Critical=pos=468,309;screen=0
-Normal=pos=468,309;screen=0

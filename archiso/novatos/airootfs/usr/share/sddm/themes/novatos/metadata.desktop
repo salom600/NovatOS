@@ -1,8 +1,0 @@
-## NovatOS SDDM theme — QML-based, modern, dark
-
-[General]
-background=./background.png
-type=qml
-
-[QML]
-mainComponent=./Main.qml
