@@ -66,6 +66,21 @@ for sock in cups sshd avahi-daemon; do
     systemctl enable "${sock}.socket" 2>/dev/null || true
 done
 
+# ---------- Override Hyprland session to use novatos-hyprland wrapper ----------
+# The hyprland package provides /usr/share/wayland-sessions/hyprland.desktop
+# which runs 'hyprland' directly. We overwrite it to run our wrapper script
+# (novatos-hyprland) which adds GPU fallback logic.
+mkdir -p /usr/share/wayland-sessions
+cat > /usr/share/wayland-sessions/hyprland.desktop <<'EOF'
+[Desktop Entry]
+Name=Hyprland
+Comment=NovatOS Hyprland session (with GPU fallback)
+Exec=novatos-hyprland
+Type=Application
+DesktopNames=Hyprland
+Keywords=launch;hyprland;wayland;compositor
+EOF
+
 # ---------- SDDM autologin (Hyprland on live boot — no password) ----------
 echo "==> [NovatOS] Enabling SDDM autologin for Hyprland (no password)..."
 mkdir -p /etc/sddm.conf.d

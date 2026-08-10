@@ -1,7 +1,0 @@
-[Desktop Entry]
-Name=Hyprland
-Comment=NovatOS Hyprland session (with GPU fallback)
-Exec=novatos-hyprland
-Type=Application
-DesktopNames=Hyprland
-Keywords=launch;hyprland;wayland;compositor
