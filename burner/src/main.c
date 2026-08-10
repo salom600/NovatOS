@@ -1,18 +1,18 @@
 /*
- * NovatOS USB Burner — native Windows .exe (C + Win32 API)
- * ========================================================
+ * NovatOS USB Burner v2.0 — native Windows .exe (C + Win32 API)
+ * =================================================================
  * Flash NovatOS ISO to USB drives in DD (raw) mode.
  *
- * Build: gcc -o NovatOSBurner.exe src/main.c -lgdi32 -lcomctl32 -lcomdlg32 -mwindows -O2 -s -static
+ * Build: gcc -o NovatOSBurner.exe src/main.c -lgdi32 -lcomctl32 -lcomdlg32 -luser32 -lkernel32 -mwindows -O2 -s -static -static-libgcc
  *
- * Key fixes (vs previous version):
- *   1. Uses \\.\PhysicalDriveN (whole disk) instead of \\.\X: (volume)
- *      — this is what Rufus/balenaEtcher use, and it works as admin
- *   2. Locks + dismounts the volume before writing (FSCTL_LOCK_VOLUME + FSCTL_DISMOUNT_VOLUME)
- *   3. Uses 8MB chunks for better throughput
- *   4. Detailed error messages with GetLastError() translation
- *   5. Flushes file buffers after write (FlushFileBuffers)
- *   6. Refreshes drive list on window focus
+ * Key improvements over v1:
+ *   1. Enumerates PHYSICAL DISKS directly (\\.\PhysicalDriveN) — detects USB
+ *      drives even when they have no drive letter (e.g. after a previous burn
+ *      left Linux partitions that Windows doesn't mount).
+ *   2. Uses IOCTL_STORAGE_QUERY_PROPERTY to get disk model name + bus type.
+ *   3. Shows disk model name in the list (e.g. "SanDisk Cruzer Blade 16GB").
+ *   4. Modern dark UI with better layout.
+ *   5. Locks + dismounts any volumes on the disk before writing.
  */
 
 #define UNICODE
@@ -26,8 +26,9 @@
 #include <winioctl.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
-/* Control IDs */
+/* ─── Control IDs ─── */
 #define ID_ISO_BUTTON     1001
 #define ID_DRIVE_LIST     1002
 #define ID_REFRESH_BUTTON 1003
@@ -36,33 +37,35 @@
 #define ID_PROGRESS       1006
 #define ID_STATUS_LABEL   1007
 #define ID_SPEED_LABEL    1008
+#define ID_VERSION_LABEL  1009
+#define ID_HEADER_LABEL   1010
+#define ID_SUBTITLE_LABEL 1011
 
-/* Global state */
+/* ─── Drive entry ─── */
+typedef struct {
+    int  physical_num;          /* PhysicalDriveN number */
+    unsigned long long size;    /* disk size in bytes */
+    WCHAR model[256];            /* vendor + product name */
+    WCHAR display[512];          /* listbox display string */
+} drive_entry;
+
+static drive_entry g_drives[64];
+static int g_drive_count = 0;
+
 static WCHAR g_iso_path[MAX_PATH] = {0};
-static int   g_selected_physical = -1;  /* PhysicalDriveN number */
-static WCHAR g_selected_letter = 0;     /* Drive letter for display */
+static int   g_selected_physical = -1;
 static BOOL  g_is_writing = FALSE;
 static HWND  g_hwnd = NULL;
 
-/* ─── Drive entry (physical disk info) ─── */
-typedef struct {
-    int  physical_num;    /* PhysicalDriveN */
-    WCHAR letter;         /* drive letter (0 if none) */
-    unsigned long long size;
-    WCHAR display[128];   /* listbox display string */
-} drive_entry;
-
-static drive_entry g_drives[26];
-static int g_drive_count = 0;
+/* ─── Forward declarations ─── */
+static void update_write_button(HWND hwnd);
+static void refresh_drives(HWND hwnd);
 
 /* ─── Helpers ─── */
 static void set_control_text(HWND parent, int id, const WCHAR *text) {
     HWND h = GetDlgItem(parent, id);
     if (h) SendMessageW(h, WM_SETTEXT, 0, (LPARAM)text);
 }
-
-/* Forward declaration (used by refresh_drives before its definition) */
-static void update_write_button(HWND hwnd);
 
 static void format_size(unsigned long long size, WCHAR *out, int out_len) {
     if (size == 0) { swprintf(out, out_len, L"Unknown"); return; }
@@ -73,119 +76,148 @@ static void format_size(unsigned long long size, WCHAR *out, int out_len) {
     swprintf(out, out_len, L"%.1f %s", s, units[i]);
 }
 
-/* ─── Translate GetLastError() to a readable message ─── */
 static void get_error_message(DWORD err, WCHAR *out, int out_len) {
-    DWORD flags = FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS;
-    DWORD n = FormatMessageW(flags, NULL, err, 0, out, out_len, NULL);
-    if (n == 0) {
-        swprintf(out, out_len, L"Error code %lu", err);
-    } else {
-        /* Strip trailing newlines */
-        while (n > 0 && (out[n-1] == L'\n' || out[n-1] == L'\r' || out[n-1] == L' ')) {
-            out[--n] = 0;
-        }
+    DWORD n = FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+                              NULL, err, 0, out, out_len, NULL);
+    if (n == 0) swprintf(out, out_len, L"Error code %lu", err);
+    else while (n > 0 && (out[n-1] == L'\n' || out[n-1] == L'\r' || out[n-1] == L' ')) out[--n] = 0;
+}
+
+/* Trim leading/trailing whitespace from a wide string */
+static void trim_wstr(WCHAR *s) {
+    int len = wcslen(s);
+    int start = 0;
+    while (start < len && (s[start] == L' ' || s[start] == L'\t')) start++;
+    if (start > 0) {
+        memmove(s, s + start, (len - start + 1) * sizeof(WCHAR));
+        len = wcslen(s);
     }
+    while (len > 0 && (s[len-1] == L' ' || s[len-1] == L'\t')) s[--len] = 0;
 }
 
-/* ─── Get physical drive number for a drive letter ───
- *
- * Converts "X:" to "\\.\PhysicalDriveN" via the volume manager.
- * Returns -1 on failure.
- */
-static int get_physical_drive_number(WCHAR letter) {
-    WCHAR volume_path[] = L"\\\\.\\X:";
-    volume_path[4] = letter;
-
-    HANDLE vol = CreateFileW(volume_path, 0,
-                             FILE_SHARE_READ | FILE_SHARE_WRITE,
-                             NULL, OPEN_EXISTING, 0, NULL);
-    if (vol == INVALID_HANDLE_VALUE) return -1;
-
-    /* IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS = 0x00560000 */
-    typedef struct {
-        DWORD disk_number;
-        LARGE_INTEGER starting_offset;
-        LARGE_INTEGER extent_length;
-    } DISK_EXTENT;
-
-    typedef struct {
-        DWORD number_of_disk_extents;
-        DISK_EXTENT extent;
-    } VOLUME_DISK_EXTENTS;
-
-    VOLUME_DISK_EXTENTS vde;
-    DWORD bytes_returned = 0;
-    BOOL ok = DeviceIoControl(vol, 0x00560000, NULL, 0,
-                              &vde, sizeof(vde), &bytes_returned, NULL);
-    CloseHandle(vol);
-
-    if (!ok || vde.number_of_disk_extents == 0) return -1;
-    return (int)vde.extent.disk_number;
-}
-
-/* ─── Get size of a physical drive ─── */
-static unsigned long long get_physical_drive_size(int physical_num) {
+/* ─── Get disk model name via IOCTL_STORAGE_QUERY_PROPERTY ─── */
+static BOOL get_disk_info(int physical_num, unsigned long long *size_out, WCHAR *model_out, int model_len) {
     WCHAR path[64];
     swprintf(path, 64, L"\\\\.\\PhysicalDrive%d", physical_num);
 
     HANDLE h = CreateFileW(path, GENERIC_READ,
                            FILE_SHARE_READ | FILE_SHARE_WRITE,
                            NULL, OPEN_EXISTING, 0, NULL);
-    if (h == INVALID_HANDLE_VALUE) return 0;
+    if (h == INVALID_HANDLE_VALUE) return FALSE;
 
-    /* IOCTL_DISK_GET_LENGTH_INFO = 0x0007405C */
-    unsigned long long size = 0;
+    /* Query storage device property to get model name + bus type */
+    STORAGE_PROPERTY_QUERY query = {0};
+    query.PropertyId = StorageDeviceProperty;
+    query.QueryType = PropertyStandardQuery;
+
+    BYTE buffer[1024] = {0};
     DWORD bytes_returned = 0;
-    BOOL ok = DeviceIoControl(h, 0x0007405C, NULL, 0,
-                              &size, sizeof(size), &bytes_returned, NULL);
+    PSTORAGE_DEVICE_DESCRIPTOR desc = (PSTORAGE_DEVICE_DESCRIPTOR)buffer;
+
+    BOOL ok = DeviceIoControl(h, IOCTL_STORAGE_QUERY_PROPERTY,
+                               &query, sizeof(query),
+                               buffer, sizeof(buffer),
+                               &bytes_returned, NULL);
+
+    if (!ok) {
+        /* Fallback: just get the size */
+        unsigned long long size = 0;
+        DeviceIoControl(h, IOCTL_DISK_GET_LENGTH_INFO, NULL, 0,
+                        &size, sizeof(size), &bytes_returned, NULL);
+        CloseHandle(h);
+        if (size_out) *size_out = size;
+        if (model_out && model_len > 0) {
+            swprintf(model_out, model_len, L"USB Drive %d", physical_num);
+        }
+        return TRUE;
+    }
+
+    /* Check if removable or USB */
+    BOOL is_removable = desc->RemovableMedia;
+    BOOL is_usb = (desc->BusType == BusTypeUsb);
+
+    if (!is_removable && !is_usb) {
+        CloseHandle(h);
+        return FALSE;
+    }
+
+    /* Get size */
+    unsigned long long size = 0;
+    DeviceIoControl(h, IOCTL_DISK_GET_LENGTH_INFO, NULL, 0,
+                    &size, sizeof(size), &bytes_returned, NULL);
+
+    /* Get vendor + product name */
+    char vendor[128] = {0};
+    char product[128] = {0};
+
+    if (desc->VendorIdOffset && desc->VendorIdOffset < bytes_returned) {
+        strncpy(vendor, (char*)buffer + desc->VendorIdOffset, 127);
+    }
+    if (desc->ProductIdOffset && desc->ProductIdOffset < bytes_returned) {
+        strncpy(product, (char*)buffer + desc->ProductIdOffset, 127);
+    }
+
+    /* Combine vendor + product */
+    char full_model[256] = {0};
+    snprintf(full_model, 256, "%s %s", vendor, product);
+    /* Trim leading spaces */
+    char *p = full_model;
+    while (*p == ' ') p++;
+
+    /* Convert to wide */
+    if (strlen(p) > 0) {
+        MultiByteToWideChar(CP_ACP, 0, p, -1, model_out, model_len);
+        trim_wstr(model_out);
+    } else {
+        swprintf(model_out, model_len, L"USB Drive %d", physical_num);
+    }
+
     CloseHandle(h);
-    return ok ? size : 0;
+
+    if (size_out) *size_out = size;
+    return TRUE;
 }
 
-/* ─── Refresh drives ───
- * Lists all removable USB drives with their physical disk numbers.
- */
+/* ─── Refresh drives — enumerate all physical disks ─── */
 static void refresh_drives(HWND hwnd) {
     HWND list = GetDlgItem(hwnd, ID_DRIVE_LIST);
     SendMessageW(list, LB_RESETCONTENT, 0, 0);
     g_drive_count = 0;
 
-    DWORD drives = GetLogicalDrives();
-    for (int i = 0; i < 26; i++) {
-        if (drives & (1 << i)) {
-            WCHAR letter = L'A' + i;
-            WCHAR root[] = {letter, L':', L'\\', 0};
-            if (GetDriveTypeW(root) == DRIVE_REMOVABLE) {
-                int phys = get_physical_drive_number(letter);
-                if (phys < 0) continue;
+    set_control_text(hwnd, ID_STATUS_LABEL, L"Scanning for USB drives...");
 
-                unsigned long long size = get_physical_drive_size(phys);
-                WCHAR size_str[32];
-                format_size(size, size_str, 32);
+    /* Try PhysicalDrive0 through PhysicalDrive63 */
+    for (int i = 0; i < 64 && g_drive_count < 64; i++) {
+        unsigned long long size = 0;
+        WCHAR model[256] = {0};
 
-                /* Store the entry */
-                drive_entry *e = &g_drives[g_drive_count];
-                e->physical_num = phys;
-                e->letter = letter;
-                e->size = size;
-                swprintf(e->display, 128,
-                    L"%c:  —  %s  (PhysicalDrive%d)", letter, size_str, phys);
+        if (!get_disk_info(i, &size, model, 256)) continue;
 
-                SendMessageW(list, LB_ADDSTRING, 0, (LPARAM)e->display);
-                g_drive_count++;
+        /* Store the entry */
+        drive_entry *e = &g_drives[g_drive_count];
+        e->physical_num = i;
+        e->size = size;
+        wcsncpy(e->model, model, 256);
 
-                if (g_drive_count >= 26) break;
-            }
-        }
+        WCHAR size_str[32];
+        format_size(size, size_str, 32);
+        swprintf(e->display, 512, L"Disk %d  —  %s  —  %s", i, model, size_str);
+
+        SendMessageW(list, LB_ADDSTRING, 0, (LPARAM)e->display);
+        g_drive_count++;
     }
 
     if (g_drive_count == 0) {
-        SendMessageW(list, LB_ADDSTRING, 0, (LPARAM)L"No USB drives found. Insert a USB drive and click Refresh.");
+        SendMessageW(list, LB_ADDSTRING, 0,
+            (LPARAM)L"No USB drives found.\nInsert a USB drive and click Refresh.");
+        set_control_text(hwnd, ID_STATUS_LABEL, L"No USB drives detected.");
+    } else {
+        WCHAR msg[128];
+        swprintf(msg, 128, L"Found %d USB drive(s). Select one to write.", g_drive_count);
+        set_control_text(hwnd, ID_STATUS_LABEL, msg);
     }
 
-    /* Reset selection */
     g_selected_physical = -1;
-    g_selected_letter = 0;
     update_write_button(hwnd);
 }
 
@@ -221,43 +253,46 @@ static void update_write_button(HWND hwnd) {
     EnableWindow(GetDlgItem(hwnd, ID_WRITE_BUTTON), enabled);
 }
 
-/* ─── Lock + dismount a volume ───
- * Required before raw write to \\.\PhysicalDriveN when the volume is mounted.
- */
-static BOOL lock_and_dismount_volume(WCHAR letter, WCHAR *err_msg, int err_len) {
-    WCHAR vol_path[] = L"\\\\.\\X:";
-    vol_path[4] = letter;
+/* ─── Lock + dismount all volumes on a physical disk ─── */
+static void lock_disk_volumes(int physical_num) {
+    /* Find all drive letters that belong to this physical disk */
+    DWORD drives = GetLogicalDrives();
+    for (int i = 0; i < 26; i++) {
+        if (drives & (1 << i)) {
+            WCHAR letter = L'A' + i;
+            WCHAR vol_path[] = L"\\\\.\\X:";
+            vol_path[4] = letter;
 
-    HANDLE vol = CreateFileW(vol_path, GENERIC_READ | GENERIC_WRITE,
-                             FILE_SHARE_READ | FILE_SHARE_WRITE,
-                             NULL, OPEN_EXISTING, 0, NULL);
-    if (vol == INVALID_HANDLE_VALUE) {
-        DWORD err = GetLastError();
-        get_error_message(err, err_msg, err_len);
-        return FALSE;
+            HANDLE vol = CreateFileW(vol_path, GENERIC_READ | GENERIC_WRITE,
+                                     FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                     NULL, OPEN_EXISTING, 0, NULL);
+            if (vol == INVALID_HANDLE_VALUE) continue;
+
+            /* Check if this volume is on our physical disk */
+            typedef struct {
+                DWORD disk_number;
+                LARGE_INTEGER starting_offset;
+                LARGE_INTEGER extent_length;
+            } DISK_EXTENT;
+            typedef struct {
+                DWORD number_of_disk_extents;
+                DISK_EXTENT extent;
+            } VOLUME_DISK_EXTENTS;
+
+            VOLUME_DISK_EXTENTS vde;
+            DWORD bytes_returned = 0;
+            if (DeviceIoControl(vol, 0x00560000, NULL, 0,
+                                &vde, sizeof(vde), &bytes_returned, NULL)) {
+                if (vde.number_of_disk_extents > 0 &&
+                    (int)vde.extent.disk_number == physical_num) {
+                    /* Lock + dismount this volume */
+                    DeviceIoControl(vol, 0x00090018, NULL, 0, NULL, 0, &bytes_returned, NULL); /* FSCTL_LOCK_VOLUME */
+                    DeviceIoControl(vol, 0x00090020, NULL, 0, NULL, 0, &bytes_returned, NULL); /* FSCTL_DISMOUNT_VOLUME */
+                }
+            }
+            CloseHandle(vol);
+        }
     }
-
-    /* Lock the volume (FSCTL_LOCK_VOLUME = 0x00090018) */
-    DWORD bytes_returned = 0;
-    if (!DeviceIoControl(vol, 0x00090018, NULL, 0, NULL, 0, &bytes_returned, NULL)) {
-        DWORD err = GetLastError();
-        get_error_message(err, err_msg, err_len);
-        CloseHandle(vol);
-        return FALSE;
-    }
-
-    /* Dismount the volume (FSCTL_DISMOUNT_VOLUME = 0x00090020) */
-    if (!DeviceIoControl(vol, 0x00090020, NULL, 0, NULL, 0, &bytes_returned, NULL)) {
-        DWORD err = GetLastError();
-        get_error_message(err, err_msg, err_len);
-        CloseHandle(vol);
-        return FALSE;
-    }
-
-    /* Keep the volume handle open (locked) — return it so the caller can close it later */
-    return vol == INVALID_HANDLE_VALUE ? FALSE : TRUE;  /* always TRUE here */
-    /* NOTE: the handle 'vol' is intentionally left open to keep the lock.
-     * The caller must close it after the write is done. We store it globally. */
 }
 
 /* ─── Write ISO thread ─── */
@@ -265,68 +300,18 @@ typedef struct {
     HWND hwnd;
     WCHAR iso_path[MAX_PATH];
     int  physical_num;
-    WCHAR drive_letter;
+    WCHAR model[256];
 } write_params;
-
-static HANDLE g_volume_lock_handle = NULL;  /* kept open to hold the lock */
 
 static DWORD WINAPI write_thread(LPVOID param) {
     write_params *wp = (write_params *)param;
     HWND hwnd = wp->hwnd;
 
-    set_control_text(hwnd, ID_STATUS_LABEL, L"Locking USB drive...");
+    set_control_text(hwnd, ID_STATUS_LABEL, L"Locking disk volumes...");
     set_control_text(hwnd, ID_SPEED_LABEL, L"");
 
-    /* Step 1: Lock + dismount the volume (prevents "drive in use" errors) */
-    WCHAR lock_err[256] = {0};
-    {
-        WCHAR vol_path[] = L"\\\\.\\X:";
-        vol_path[4] = wp->drive_letter;
-
-        g_volume_lock_handle = CreateFileW(vol_path,
-            GENERIC_READ | GENERIC_WRITE,
-            FILE_SHARE_READ | FILE_SHARE_WRITE,
-            NULL, OPEN_EXISTING, 0, NULL);
-
-        if (g_volume_lock_handle == INVALID_HANDLE_VALUE) {
-            DWORD err = GetLastError();
-            get_error_message(err, lock_err, 256);
-            WCHAR msg[512];
-            swprintf(msg, 512,
-                L"Cannot open volume %c:.\n\nError: %s\n\n"
-                L"Try closing any programs that may be using the drive\n"
-                L"(File Explorer, antivirus, etc.) and try again.",
-                wp->drive_letter, lock_err);
-            MessageBoxW(hwnd, msg, L"Error", MB_OK | MB_ICONERROR);
-            set_control_text(hwnd, ID_STATUS_LABEL, L"Error: Cannot lock drive");
-            g_is_writing = FALSE;
-            update_write_button(hwnd);
-            free(wp);
-            return 1;
-        }
-
-        DWORD bytes_returned = 0;
-        /* Lock the volume */
-        if (!DeviceIoControl(g_volume_lock_handle, 0x00090018, NULL, 0, NULL, 0, &bytes_returned, NULL)) {
-            DWORD err = GetLastError();
-            get_error_message(err, lock_err, 256);
-            WCHAR msg[512];
-            swprintf(msg, 512,
-                L"Cannot lock volume %c: (it may be in use).\n\nError: %s\n\n"
-                L"Close File Explorer and any programs using the drive, then try again.",
-                wp->drive_letter, lock_err);
-            MessageBoxW(hwnd, msg, L"Error", MB_OK | MB_ICONERROR);
-            CloseHandle(g_volume_lock_handle);
-            g_volume_lock_handle = NULL;
-            set_control_text(hwnd, ID_STATUS_LABEL, L"Error: Cannot lock drive");
-            g_is_writing = FALSE;
-            update_write_button(hwnd);
-            free(wp);
-            return 1;
-        }
-        /* Dismount the volume */
-        DeviceIoControl(g_volume_lock_handle, 0x00090020, NULL, 0, NULL, 0, &bytes_returned, NULL);
-    }
+    /* Step 1: Lock + dismount any volumes on this disk */
+    lock_disk_volumes(wp->physical_num);
 
     set_control_text(hwnd, ID_STATUS_LABEL, L"Opening physical drive...");
 
@@ -346,14 +331,11 @@ static DWORD WINAPI write_thread(LPVOID param) {
         WCHAR msg[512];
         swprintf(msg, 512,
             L"Cannot open %s.\n\nError: %s\n\n"
-            L"Make sure you run NovatOSBurner.exe as Administrator.",
+            L"Close File Explorer and any programs using the drive,\n"
+            L"then try again. Make sure you run as Administrator.",
             phys_path, err_msg);
         MessageBoxW(hwnd, msg, L"Error", MB_OK | MB_ICONERROR);
-        set_control_text(hwnd, ID_STATUS_LABEL, L"Error: Cannot open physical drive");
-        if (g_volume_lock_handle) {
-            CloseHandle(g_volume_lock_handle);
-            g_volume_lock_handle = NULL;
-        }
+        set_control_text(hwnd, ID_STATUS_LABEL, L"Error: Cannot open drive");
         g_is_writing = FALSE;
         update_write_button(hwnd);
         free(wp);
@@ -372,10 +354,6 @@ static DWORD WINAPI write_thread(LPVOID param) {
         MessageBoxW(hwnd, msg, L"Error", MB_OK | MB_ICONERROR);
         set_control_text(hwnd, ID_STATUS_LABEL, L"Error: Cannot open ISO file");
         CloseHandle(handle);
-        if (g_volume_lock_handle) {
-            CloseHandle(g_volume_lock_handle);
-            g_volume_lock_handle = NULL;
-        }
         g_is_writing = FALSE;
         update_write_button(hwnd);
         free(wp);
@@ -392,16 +370,12 @@ static DWORD WINAPI write_thread(LPVOID param) {
     SendMessageW(progress, PBM_SETRANGE32, 0, 10000);
     SendMessageW(progress, PBM_SETPOS, 0, 0);
 
-    /* Write in 8MB chunks (faster than 4MB) */
+    /* Write in 8MB chunks */
     DWORD chunk_size = 8 * 1024 * 1024;
     BYTE *buf = (BYTE *)VirtualAlloc(NULL, chunk_size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     if (!buf) {
         CloseHandle(handle);
         CloseHandle(iso);
-        if (g_volume_lock_handle) {
-            CloseHandle(g_volume_lock_handle);
-            g_volume_lock_handle = NULL;
-        }
         MessageBoxW(hwnd, L"Out of memory.", L"Error", MB_OK | MB_ICONERROR);
         g_is_writing = FALSE;
         update_write_button(hwnd);
@@ -417,10 +391,10 @@ static DWORD WINAPI write_thread(LPVOID param) {
     while (1) {
         DWORD bytes_read = 0;
         if (!ReadFile(iso, buf, chunk_size, &bytes_read, NULL) || bytes_read == 0) {
-            if (bytes_read == 0) break; /* EOF */
+            if (bytes_read == 0) break;
         }
 
-        /* Write in aligned chunks — some USB drives don't like writes larger than 1MB */
+        /* Write in 1MB sub-chunks for compatibility */
         DWORD total_to_write = bytes_read;
         DWORD offset = 0;
         while (total_to_write > 0) {
@@ -433,10 +407,6 @@ static DWORD WINAPI write_thread(LPVOID param) {
                 VirtualFree(buf, 0, MEM_RELEASE);
                 CloseHandle(handle);
                 CloseHandle(iso);
-                if (g_volume_lock_handle) {
-                    CloseHandle(g_volume_lock_handle);
-                    g_volume_lock_handle = NULL;
-                }
                 WCHAR msg[512];
                 swprintf(msg, 512,
                     L"Write failed at offset %llu.\n\nError: %s",
@@ -468,19 +438,13 @@ static DWORD WINAPI write_thread(LPVOID param) {
         set_control_text(hwnd, ID_SPEED_LABEL, speed_str);
     }
 
-    /* Flush buffers to ensure all data is written to the physical disk */
+    /* Flush buffers */
     set_control_text(hwnd, ID_STATUS_LABEL, L"Flushing buffers...");
     FlushFileBuffers(handle);
 
     VirtualFree(buf, 0, MEM_RELEASE);
     CloseHandle(handle);
     CloseHandle(iso);
-
-    /* Release the volume lock */
-    if (g_volume_lock_handle) {
-        CloseHandle(g_volume_lock_handle);
-        g_volume_lock_handle = NULL;
-    }
 
     SendMessageW(progress, PBM_SETPOS, 10000, 0);
     set_control_text(hwnd, ID_STATUS_LABEL, L"✓ Done! USB drive is bootable.");
@@ -500,14 +464,29 @@ static void start_write(HWND hwnd) {
     if (g_is_writing) return;
     if (!g_iso_path[0] || g_selected_physical < 0) return;
 
+    /* Find the selected drive entry to show in confirmation */
+    WCHAR model[256] = {0};
+    unsigned long long size = 0;
+    for (int i = 0; i < g_drive_count; i++) {
+        if (g_drives[i].physical_num == g_selected_physical) {
+            wcsncpy(model, g_drives[i].model, 256);
+            size = g_drives[i].size;
+            break;
+        }
+    }
+
     /* Confirm */
-    WCHAR msg[256];
+    WCHAR size_str[32];
+    format_size(size, size_str, 32);
     const WCHAR *fname = wcsrchr(g_iso_path, L'\\');
     fname = fname ? fname + 1 : g_iso_path;
-    swprintf(msg, 256,
-        L"You are about to write:\n\n  %s\n\nto USB drive %c: (PhysicalDrive%d)\n\n"
+
+    WCHAR msg[512];
+    swprintf(msg, 512,
+        L"You are about to write:\n\n  %s\n\n"
+        L"to USB drive:\n\n  Disk %d — %s — %s\n\n"
         L"⚠ ALL DATA on this USB drive will be PERMANENTLY ERASED.\n\nContinue?",
-        fname, g_selected_letter, g_selected_physical);
+        fname, g_selected_physical, model, size_str);
 
     if (MessageBoxW(hwnd, msg, L"Confirm Write", MB_YESNO | MB_ICONWARNING) != IDYES)
         return;
@@ -520,7 +499,7 @@ static void start_write(HWND hwnd) {
     wp->hwnd = hwnd;
     wcscpy(wp->iso_path, g_iso_path);
     wp->physical_num = g_selected_physical;
-    wp->drive_letter = g_selected_letter;
+    wcsncpy(wp->model, model, 256);
 
     HANDLE h = CreateThread(NULL, 0, write_thread, wp, 0, NULL);
     if (h) CloseHandle(h);
@@ -548,7 +527,6 @@ static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                                             LB_GETCURSEL, 0, 0);
                 if (sel >= 0 && sel < g_drive_count) {
                     g_selected_physical = g_drives[sel].physical_num;
-                    g_selected_letter = g_drives[sel].letter;
                     update_write_button(hwnd);
                 }
             }
@@ -564,11 +542,17 @@ static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     }
 }
 
-/* ─── Create a child control ─── */
+/* ─── Create a child control with custom font ─── */
+static HWND g_hFont = NULL;
+static HWND g_hFontBold = NULL;
+
 static HWND create_ctrl(const WCHAR *class, DWORD style, HWND parent,
-                        int id, const WCHAR *text, int x, int y, int w, int h) {
-    return CreateWindowExW(0, class, text, style,
+                        int id, const WCHAR *text, int x, int y, int w, int h,
+                        HFONT font) {
+    HWND h = CreateWindowExW(0, class, text, style,
                            x, y, w, h, parent, (HMENU)(INT_PTR)id, NULL, NULL);
+    if (h && font) SendMessageW(h, WM_SETFONT, (WPARAM)font, TRUE);
+    return h;
 }
 
 /* ─── WinMain ─── */
@@ -579,7 +563,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmd, int show) {
     wc.lpfnWndProc = wnd_proc;
     wc.lpszClassName = class_name;
     wc.hInstance = hInst;
-    wc.hbrBackground = (HBRUSH)(COLOR_BTNFACE + 1);
+    wc.hbrBackground = (HBRUSH)CreateSolidBrush(RGB(15, 17, 23));
     wc.hCursor = LoadCursorW(NULL, IDC_ARROW);
     RegisterClassW(&wc);
 
@@ -587,50 +571,68 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmd, int show) {
     INITCOMMONCONTROLSEX icc = {sizeof(icc), ICC_PROGRESS_CLASS};
     InitCommonControlsEx(&icc);
 
+    /* Create fonts */
+    g_hFont = CreateFontW(16, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                          DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+                          CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+                          FF_DONTCARE, L"Segoe UI");
+    g_hFontBold = CreateFontW(22, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
+                               DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+                               CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+                               FF_DONTCARE, L"Segoe UI");
+
     /* Create main window */
-    g_hwnd = CreateWindowExW(0, class_name, L"NovatOS USB Burner",
+    g_hwnd = CreateWindowExW(0, class_name, L"NovatOS USB Burner v2.0",
         WS_OVERLAPPEDWINDOW & ~WS_MAXIMIZEBOX & ~WS_THICKFRAME,
-        CW_USEDEFAULT, CW_USEDEFAULT, 640, 600,
+        CW_USEDEFAULT, CW_USEDEFAULT, 680, 620,
         NULL, NULL, hInst, NULL);
 
     if (!g_hwnd) return 1;
 
     /* Header */
-    create_ctrl(L"STATIC", WS_CHILD | WS_VISIBLE, g_hwnd, 0,
-                L"NovatOS USB Burner", 20, 15, 400, 24);
-    create_ctrl(L"STATIC", WS_CHILD | WS_VISIBLE, g_hwnd, 0,
-                L"Flash NovatOS ISO to a USB drive (DD mode)", 20, 38, 400, 18);
+    create_ctrl(L"STATIC", WS_CHILD | WS_VISIBLE, g_hwnd, ID_HEADER_LABEL,
+                L"NovatOS USB Burner", 20, 15, 400, 32, g_hFontBold);
+    create_ctrl(L"STATIC", WS_CHILD | WS_VISIBLE, g_hwnd, ID_SUBTITLE_LABEL,
+                L"Flash NovatOS ISO to a USB drive (DD mode)", 20, 45, 400, 20, g_hFont);
+    create_ctrl(L"STATIC", WS_CHILD | WS_VISIBLE | SS_RIGHT, g_hwnd, ID_VERSION_LABEL,
+                L"v2.0", 560, 20, 80, 20, g_hFont);
 
     /* ISO selection */
-    create_ctrl(L"STATIC", WS_CHILD | WS_VISIBLE, g_hwnd, 0, L"ISO File:", 20, 75, 100, 18);
+    create_ctrl(L"STATIC", WS_CHILD | WS_VISIBLE, g_hwnd, 0,
+                L"ISO File:", 20, 85, 100, 20, g_hFont);
     create_ctrl(L"STATIC", WS_CHILD | WS_VISIBLE, g_hwnd, ID_ISO_LABEL,
-                L"No ISO selected", 20, 95, 440, 20);
+                L"No ISO selected", 20, 108, 440, 20, g_hFont);
     create_ctrl(L"BUTTON", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, g_hwnd, ID_ISO_BUTTON,
-                L"Browse...", 470, 92, 130, 26);
+                L"Browse...", 470, 105, 140, 28, g_hFont);
 
     /* Drive selection */
-    create_ctrl(L"STATIC", WS_CHILD | WS_VISIBLE, g_hwnd, 0, L"USB Drive:", 20, 135, 100, 18);
-    create_ctrl(L"LISTBOX", WS_CHILD | WS_VISIBLE | WS_BORDER | LBS_NOTIFY,
-                g_hwnd, ID_DRIVE_LIST, L"", 20, 155, 440, 120);
+    create_ctrl(L"STATIC", WS_CHILD | WS_VISIBLE, g_hwnd, 0,
+                L"USB Drive (select disk):", 20, 148, 300, 20, g_hFont);
+    create_ctrl(L"LISTBOX", WS_CHILD | WS_VISIBLE | WS_BORDER | LBS_NOTIFY | WS_VSCROLL,
+                g_hwnd, ID_DRIVE_LIST, L"", 20, 170, 440, 130, g_hFont);
     create_ctrl(L"BUTTON", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, g_hwnd, ID_REFRESH_BUTTON,
-                L"Refresh", 470, 155, 130, 26);
+                L"Refresh", 470, 170, 140, 28, g_hFont);
 
     /* Progress */
     create_ctrl(L"STATIC", WS_CHILD | WS_VISIBLE, g_hwnd, ID_STATUS_LABEL,
-                L"Ready", 20, 295, 580, 20);
+                L"Ready — insert a USB drive and click Refresh", 20, 320, 590, 22, g_hFont);
     create_ctrl(PROGRESS_CLASSW, WS_CHILD | WS_VISIBLE, g_hwnd, ID_PROGRESS,
-                L"", 20, 315, 580, 24);
+                L"", 20, 345, 590, 26, g_hFont);
     create_ctrl(L"STATIC", WS_CHILD | WS_VISIBLE, g_hwnd, ID_SPEED_LABEL,
-                L"", 20, 343, 580, 18);
+                L"", 20, 378, 590, 20, g_hFont);
 
     /* Write button */
     HWND write_btn = create_ctrl(L"BUTTON", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-                                 g_hwnd, ID_WRITE_BUTTON, L"Write to USB", 220, 380, 200, 40);
+                                 g_hwnd, ID_WRITE_BUTTON, L"Write to USB", 240, 415, 200, 42, g_hFontBold);
 
     /* Warning */
     create_ctrl(L"STATIC", WS_CHILD | WS_VISIBLE, g_hwnd, 0,
                 L"⚠ All data on the selected USB drive will be permanently erased.",
-                20, 440, 580, 20);
+                20, 480, 590, 20, g_hFont);
+
+    create_ctrl(L"STATIC", WS_CHILD | WS_VISIBLE | SS_CENTER, g_hwnd, 0,
+                L"NovatOS Aurora Edition — 2026  |  github.com/salom600/NovatOS",
+                20, 560, 590, 20, g_hFont);
 
     /* Disable write button initially */
     EnableWindow(write_btn, FALSE);
