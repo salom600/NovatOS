@@ -543,16 +543,16 @@ static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 }
 
 /* ─── Create a child control with custom font ─── */
-static HWND g_hFont = NULL;
-static HWND g_hFontBold = NULL;
+static HFONT g_hFont = NULL;
+static HFONT g_hFontBold = NULL;
 
-static HWND create_ctrl(const WCHAR *class, DWORD style, HWND parent,
+static HWND create_ctrl(const WCHAR *cls, DWORD style, HWND parent,
                         int id, const WCHAR *text, int x, int y, int w, int h,
                         HFONT font) {
-    HWND h = CreateWindowExW(0, class, text, style,
+    HWND hwnd_ctrl = CreateWindowExW(0, cls, text, style,
                            x, y, w, h, parent, (HMENU)(INT_PTR)id, NULL, NULL);
-    if (h && font) SendMessageW(h, WM_SETFONT, (WPARAM)font, TRUE);
-    return h;
+    if (hwnd_ctrl && font) SendMessageW(hwnd_ctrl, WM_SETFONT, (WPARAM)font, TRUE);
+    return hwnd_ctrl;
 }
 
 /* ─── WinMain ─── */
