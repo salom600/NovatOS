@@ -61,6 +61,9 @@ static void set_control_text(HWND parent, int id, const WCHAR *text) {
     if (h) SendMessageW(h, WM_SETTEXT, 0, (LPARAM)text);
 }
 
+/* Forward declaration (used by refresh_drives before its definition) */
+static void update_write_button(HWND hwnd);
+
 static void format_size(unsigned long long size, WCHAR *out, int out_len) {
     if (size == 0) { swprintf(out, out_len, L"Unknown"); return; }
     const WCHAR *units[] = {L"B", L"KB", L"MB", L"GB", L"TB"};
