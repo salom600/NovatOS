@@ -33,8 +33,8 @@ jobs:
         working-directory: burner
         run: |
           gcc -o NovatOSBurner.exe src/main.c \
-            -lgdi32 -lcomctl32 -lcomdlg32 \
-            -mwindows -O2 -s -static
+            -lgdi32 -lcomctl32 -lcomdlg32 -luser32 -lkernel32 \
+            -mwindows -O2 -s -static -static-libgcc
           if [ -f NovatOSBurner.exe ]; then
             ls -la NovatOSBurner.exe
             echo "Build OK"
