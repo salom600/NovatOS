@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+#
+# /usr/local/bin/novatos-hyprland
+# =================================
+# Wrapper for Hyprland that detects GPU mode and sets the right
+# environment variables for maximum compatibility.
+#
+# If 'nomodeset' is in kernel params (or no GPU driver is loaded):
+#   - Forces software rendering (llvmpipe)
+#   - Disables hardware cursors
+#   - Uses GLES2 renderer (works with llvmpipe)
+#
+# If GPU acceleration is available:
+#   - Uses native GPU drivers
+#   - Disables hardware cursors (some drivers have issues)
+#
+set -euo pipefail
+
+# Detect if we should use software rendering
+USE_SOFTWARE=0
+
+# Check kernel params for nomodeset
+if grep -q nomodeset /proc/cmdline 2>/dev/null; then
+    USE_SOFTWARE=1
+fi
+
+# Check if no GPU driver is loaded
+if ! lsmod 2>/dev/null | grep -qE 'amdgpu|radeon|i915|nouveau|nvidia'; then
+    USE_SOFTWARE=1
+fi
+
+# Set common environment variables
+export WLR_NO_HARDWARE_CURSORS=1
+export HYPRCURSOR_THEME=breeze_cursors
+
+if [ "$USE_SOFTWARE" = "1" ]; then
+    echo "[NovatOS] Using software rendering (llvmpipe)" >&2
+    export WLR_RENDERER=gles2
+    export LIBGL_ALWAYS_SOFTWARE=1
+    export WLR_NO_HARDWARE_CURSORS=1
+    # Disable vsync for better performance in software mode
+    export WLR_NO_VSYNC=1
+else
+    echo "[NovatOS] Using GPU acceleration" >&2
+fi
+
+# Exec Hyprland
+exec hyprland "$@"

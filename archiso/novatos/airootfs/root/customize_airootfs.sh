@@ -78,6 +78,20 @@ Session=hyprland
 SkipPassword=true
 EOF
 
+# ---------- SDDM theme (modern NovatOS theme) ----------
+cat > /etc/sddm.conf.d/theme.conf <<'EOF'
+[Theme]
+ThemeDir=/usr/share/sddm/themes
+Current=novatos
+
+[Wayland]
+EnableHiDPI=true
+CompositorCommand=kwin_wayland --no-lockscreen
+
+[X11]
+EnableHiDPI=true
+EOF
+
 # ---------- PAM config: allow passwordless login ----------
 cat > /etc/pam.d/sddm-autologin <<'EOF'
 # PAM config for SDDM autologin — no password required

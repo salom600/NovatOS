@@ -2,14 +2,21 @@
 #
 # /usr/local/bin/novatos-install
 # =================================
-# NovatOS installer wrapper around archinstall.
-# Called automatically in Install Mode (when novatos.install=1 kernel param is set),
-# or manually from the Live desktop.
+# NovatOS graphical installer.
+#
+# Shows a modern GTK dialog asking if the user wants to:
+#   1. Run the guided text installer (archinstall)
+#   2. Open a terminal for manual installation
+#
+# Then launches archinstall in a terminal window.
 #
 set -euo pipefail
 
-# NovatOS banner
-cat <<'BANNER'
+# If we're in a TTY (Install Mode), launch archinstall directly
+if [ ! -d "/run/user/$(id -u)" ] || [ -z "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
+    # TTY mode — launch archinstall directly
+    clear
+    cat <<'BANNER'
 
   ███╗   ██╗ ██████╗ ██╗   ██╗ █████╗ ███████╗████████╗ ██████╗ ██╗    ██╗
   ████╗  ██║██╔═══██╗██║   ██║██╔══██╗██╔════╝╚══██╔══╝██╔═══██╗██║    ██║
@@ -20,48 +27,50 @@ cat <<'BANNER'
 
                           Aurora Edition — 2026
 
-                  Welcome to the NovatOS installer.
-
 BANNER
 
-# Check internet connectivity
-echo "==> Checking internet connectivity..."
-if ping -c 1 -W 3 archlinux.org >/dev/null 2>&1; then
-    echo "    ✓ Internet available — latest drivers will be installed"
-    HAS_NET=1
-else
-    echo "    ✗ No internet — installing basic drivers only"
-    echo "    (You can install full drivers later once connected)"
-    HAS_NET=0
-fi
+    # Check internet connectivity
+    if ping -c 1 -W 3 archlinux.org >/dev/null 2>&1; then
+        echo "  ✓ Internet available — latest drivers will be installed"
+    else
+        echo "  ⚠ No internet — installing basic drivers only"
+        echo "    (You can install full drivers later once connected)"
+    fi
 
-# Refresh mirrors if we have internet
-if [ "$HAS_NET" = "1" ]; then
     echo ""
-    echo "==> Refreshing pacman mirrors..."
-    reflector --protocol https --latest 30 --sort rate \
-              --save /etc/pacman.d/mirrorlist --download-timeout 5 2>/dev/null || true
-    echo "==> Updating package databases..."
-    pacman -Sy --noconfirm || true
-fi
+    echo "  Launching installer..."
+    echo ""
 
-echo ""
-echo "==> Launching archinstall guided installer..."
-echo "    (Press Ctrl+C at any time to abort)"
-echo ""
+    # Refresh mirrors if we have internet
+    if ping -c 1 -W 3 archlinux.org >/dev/null 2>&1; then
+        echo "  Refreshing pacman mirrors..."
+        reflector --protocol https --latest 30 --sort rate \
+                  --save /etc/pacman.d/mirrorlist --download-timeout 5 2>/dev/null || true
+        echo "  Updating package databases..."
+        pacman -Sy --noconfirm || true
+    fi
 
-# Pre-set environment for archinstall
-export ARCHINSTALL_LANGUAGE="English"
-export ARCHINSTALL_HOSTNAME="${ARCHINSTALL_HOSTNAME:-novatos}"
-
-# Launch archinstall
-if [ "$HAS_NET" = "1" ]; then
-    # With internet: full guided install
     exec archinstall
+fi
+
+# Graphical mode — show a dialog
+if command -v zenity >/dev/null 2>&1; then
+    CHOICE=$(zenity --question --title="NovatOS Installer" \
+        --text="Welcome to the NovatOS installer!\n\nThis will permanently install NovatOS on your hard drive.\n\nThe installer runs in a terminal window. Continue?" \
+        --ok-label="Continue" --cancel-label="Cancel" 2>&1 && echo "yes" || echo "no")
+
+    if [ "$CHOICE" = "yes" ]; then
+        # Launch archinstall in a terminal
+        if command -v foot >/dev/null 2>&1; then
+            exec foot -e bash -c "novatos-install"
+        elif command -v xterm >/dev/null 2>&1; then
+            exec xterm -e bash -c "novatos-install"
+        else
+            # Fallback: launch directly
+            exec archinstall
+        fi
+    fi
 else
-    # Without internet: guided install with offline fallback
-    echo "  [offline mode] archinstall will use cached packages only."
-    echo "  [offline mode] Some drivers may not be available."
-    echo ""
+    # No zenity — launch archinstall directly
     exec archinstall
 fi

@@ -1,0 +1,7 @@
+## NovatOS SDDM theme — modern, Windows 11-style
+[General]
+background=./background.png
+type=image
+
+[Selectors]
+background=background.png
