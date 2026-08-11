@@ -24,25 +24,20 @@ jobs:
       contents: write
       actions: write
 
+    container:
+      image: debian:bookworm
+      options: --privileged
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Install live-build + dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y live-build debootstrap squashfs-tools xorriso grub-pc-bin grub-efi-amd64-bin mtools
-          # Install Debian keyring (Ubuntu runner doesn't have it by default)
-          sudo apt-get install -y debian-archive-keyring
-          # Download Debian debootstrap config (Ubuntu's debootstrap may not know "bookworm")
-          sudo mkdir -p /usr/share/debootstrap/scripts
-          if [ ! -f /usr/share/debootstrap/scripts/bookworm ]; then
-            sudo ln -sf /usr/share/debootstrap/scripts/sid /usr/share/debootstrap/scripts/bookworm 2>/dev/null || true
-            # If sid doesn't exist either, download from Debian
-            if [ ! -f /usr/share/debootstrap/scripts/bookworm ]; then
-              sudo wget -q -O /usr/share/debootstrap/scripts/bookworm https://salsa.debian.org/installer-team/debootstrap/-/raw/master/scripts/bookworm || true
-            fi
-          fi
+          apt-get update
+          apt-get install -y live-build debootstrap squashfs-tools xorriso \
+            grub-pc-bin grub-efi-amd64-bin grub-efi-amd64-signed mtools \
+            debian-archive-keyring ca-certificates wget git
 
       - name: Copy NovatOS desktop source
         run: |
@@ -63,8 +58,6 @@ jobs:
         run: |
           cd build
           # Configure live-build (Debian 12 Bookworm)
-          # All mirrors must point to Debian (not Ubuntu) — the runner is Ubuntu
-          # but we're building Debian, so debootstrap needs Debian repos.
           lb config \
             --distribution bookworm \
             --architecture amd64 \
@@ -82,7 +75,7 @@ jobs:
             --bootappend-live "boot=live components nomodeset quiet splash"
 
           echo "::group::live-build output"
-          sudo lb build 2>&1 | tee build.log
+          lb build 2>&1 | tee build.log
           echo "::endgroup::"
 
           # Find produced ISO
