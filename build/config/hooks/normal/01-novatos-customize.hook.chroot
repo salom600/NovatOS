@@ -54,28 +54,53 @@ systemctl enable virtualbox-guest-utils.service 2>/dev/null || true
 systemctl enable open-vm-tools.service 2>/dev/null || true
 
 # ─── SDDM autologin (no password — boot straight to desktop) ───
+echo "==> [NovatOS] Configuring SDDM auto-login..."
 mkdir -p /etc/sddm.conf.d
+
+# Remove ALL other session files so only NovatOS appears
+rm -f /usr/share/xsessions/*.desktop 2>/dev/null
+rm -f /usr/share/wayland-sessions/*.desktop 2>/dev/null
+
+# Create NovatOS session file FIRST
+mkdir -p /usr/share/xsessions
+cat > /usr/share/xsessions/novatos.desktop <<'EOF'
+[Desktop Entry]
+Name=NovatOS Desktop
+Comment=NovatOS custom desktop
+Exec=/usr/local/bin/novatos-desktop
+Type=Application
+DesktopNames=NovatOS
+EOF
+
+# Make sure the desktop script is executable
+chmod +x /usr/local/bin/novatos-desktop 2>/dev/null || true
+chmod +x /usr/local/bin/novatos-menu 2>/dev/null || true
+chmod +x /usr/local/bin/novatos-lock 2>/dev/null || true
+
+# SDDM autologin config
 cat > /etc/sddm.conf.d/autologin.conf <<'EOF'
 [Autologin]
 User=novatos
-Session=novatos.desktop
+Session=novatos
+EOF
+
+# SDDM main config (no theme = use default, no session picker)
+cat > /etc/sddm.conf.d/00-novatos.conf <<'EOF'
+[Autologin]
+User=novatos
+Session=novatos
+
+[Theme]
+Current=
 
 [Users]
 SkipPassword=true
 RememberLastUser=true
 RememberLastSession=true
-EOF
-
-cat > /etc/sddm.conf.d/theme.conf <<'EOF'
-[Theme]
-ThemeDir=/usr/share/sddm/themes
-Current=
 
 [X11]
 EnableHiDPI=true
 ServerArguments=-nolisten tcp
-DisplayCommand=/usr/share/sddm/scripts/Xsetup
-DisplayStopCommand=/usr/share/sddm/scripts/Xstop
 SessionDir=/usr/share/xsessions
 EOF
 
@@ -96,20 +121,6 @@ polkit.addRule(function(action, subject) {
         return polkit.Result.YES;
     }
 });
-EOF
-
-# ─── Install NovatOS desktop session file ───
-mkdir -p /usr/share/xsessions
-
-# X11 session (openbox + tint2 — reliable, works on any GPU)
-cat > /usr/share/xsessions/novatos.desktop <<'EOF'
-[Desktop Entry]
-Name=NovatOS Desktop
-Comment=NovatOS custom desktop (openbox + tint2)
-Exec=/usr/local/bin/novatos-desktop
-Type=Application
-DesktopNames=NovatOS
-Keywords=desktop;openbox;novatos
 EOF
 
 # ─── NetworkManager config ───

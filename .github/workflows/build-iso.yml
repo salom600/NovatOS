@@ -46,8 +46,13 @@ jobs:
           cp installer/src/novatos_installer.py build/includes.chroot/usr/local/bin/novatos-installer
           chmod +x build/includes.chroot/usr/local/bin/novatos-installer
 
-          # Make all scripts executable
-          chmod +x build/includes.chroot/usr/local/bin/novatos-*
+          # Make ALL scripts executable (critical — SDDM can't launch non-executable scripts)
+          chmod +x build/includes.chroot/usr/local/bin/novatos-desktop
+          chmod +x build/includes.chroot/usr/local/bin/novatos-menu
+          chmod +x build/includes.chroot/usr/local/bin/novatos-lock
+
+          # Verify they're executable
+          ls -la build/includes.chroot/usr/local/bin/novatos-*
 
       - name: Build ISO
         id: build

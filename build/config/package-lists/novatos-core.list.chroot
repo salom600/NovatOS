@@ -153,7 +153,7 @@ intel-media-va-driver
 intel-microcode
 amd64-microcode
 
-# ─── Display server: X11 + Wayland ───
+# ─── Display server: X11 (reliable, works on all GPUs) ───
 xserver-xorg
 xserver-xorg-video-all
 xserver-xorg-video-nvidia
@@ -162,10 +162,11 @@ xserver-xorg-video-ati
 xserver-xorg-video-intel
 xserver-xorg-video-nouveau
 xserver-xorg-input-all
-xwayland
-weston
 
 # ─── Desktop stack: openbox + tint2 + nitrogen (reliable, lightweight) ───
+# NOTE: Do NOT install plasma-desktop, weston, or other DEs — they add session
+# files to /usr/share/xsessions and /usr/share/wayland-sessions that show up
+# in the SDDM session picker. We want ONLY NovatOS Desktop.
 openbox
 tint2
 nitrogen
