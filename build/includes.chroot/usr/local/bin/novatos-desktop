@@ -1,0 +1,41 @@
+#!/bin/bash
+## NovatOS Desktop launcher with GPU fallback
+## Detects if GPU acceleration is available; falls back to software rendering.
+
+set -e
+
+# Check if nomodeset is in kernel params
+USE_SOFTWARE=0
+if grep -q nomodeset /proc/cmdline 2>/dev/null; then
+    USE_SOFTWARE=1
+fi
+
+# Check if no GPU driver is loaded
+if ! lsmod 2>/dev/null | grep -qE 'amdgpu|radeon|i915|nouveau|nvidia|vmwgfx|virtio_gpu'; then
+    USE_SOFTWARE=1
+fi
+
+# Check if we're in a VM (VMs often need software rendering for Qt)
+if systemd-detect-virt 2>/dev/null | grep -qE 'oracle|vmware|qemu|kvm|none'; then
+    # In VM — use GPU if available, but prepare for fallback
+    :
+fi
+
+# Set environment variables
+if [ "$USE_SOFTWARE" = "1" ]; then
+    echo "[NovatOS] Using software rendering (compatibility mode)" >&2
+    export QT_QUICK_BACKEND=software
+    export LIBGL_ALWAYS_SOFTWARE=1
+    export WLR_NO_HARDWARE_CURSORS=1
+else
+    echo "[NovatOS] Using GPU acceleration" >&2
+    export WLR_NO_HARDWARE_CURSORS=1
+fi
+
+# Common Qt settings
+export QT_QPA_PLATFORMTHEME=qt5ct
+export QT_AUTO_SCREEN_SCALE_FACTOR=1
+export QT_SCALE_FACTOR=1
+
+# Launch NovatOS Desktop
+exec /usr/local/bin/novatos-desktop "$@"

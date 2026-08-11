@@ -1,12 +1,19 @@
 # Build artifacts
-build/
-out/
-work/
-output/
+*.iso
+*.iso.part*
+*.sha256sum
+build/.build/
+build/.chroot/
+build/.config/
+build/.stage/
+build/binary/
+build/chroot/
+build/cache/
+build/local/
+build/build.log
 
-# Local config / caches
+# Local config
 *.swp
-*.swo
 *~
 .DS_Store
 __pycache__/
@@ -14,7 +21,6 @@ __pycache__/
 .idea/
 .vscode/
 
-# Branding source files
-/tmp/_novatos.svg
+# Logs
 logs/
 *.log

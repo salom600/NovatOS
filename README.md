@@ -1,7 +1,8 @@
-# NovatOS — Aurora Edition 2026 (Hyprland)
+# NovatOS — Aurora Edition 2026
 
-> A modern, lightweight **Arch Linux**-based distribution featuring **Hyprland**
-> (Windows 11-style desktop, ~250MB RAM), built for 2009-2026 hardware.
+> A modern, lightweight **Debian 12 (Bookworm)**-based distribution with a
+> **custom-built desktop environment** (Qt6), designed to run on **any hardware
+> from 2009 to 2026** — AMD R2, NVIDIA GT 240M, modern GPUs, and VMs.
 
 [![Build ISO](https://github.com/salom600/NovatOS/actions/workflows/build-iso.yml/badge.svg)](https://github.com/salom600/NovatOS/actions/workflows/build-iso.yml)
 [![Build Burner](https://github.com/salom600/NovatOS/actions/workflows/build-burner.yml/badge.svg)](https://github.com/salom600/NovatOS/releases)
@@ -11,90 +12,67 @@
 
 ## What is NovatOS?
 
-NovatOS is an Arch-based Linux distribution assembled via [`archiso`](https://wiki.archlinux.org/title/Archiso)
-and built entirely in **GitHub Actions**. Every push to `main` produces a fresh, bootable ISO
-+ a Windows `.exe` USB burner, published to the [Releases](https://github.com/salom600/NovatOS/releases) page.
+NovatOS is a **complete rebuild** from the ground up — not based on Arch Linux
+anymore. The new foundation is **Debian 12 (Bookworm)** for maximum stability
+and hardware support. On top of that sits a **custom-built desktop environment**
+(we wrote it ourselves in C++/Qt6) — not Hyprland, not KDE, not GNOME.
+
+### Why Debian 12?
+- **Rock-solid stable** — packages are tested for months before release
+- **Best hardware support** — Debian supports more hardware than any other distro
+- ** LTS-level support** — Debian 12 supported until 2028
+- **Huge package repository** — 60,000+ packages
+
+### Custom Desktop (not a fork)
+We built our own desktop environment from scratch using **Qt6 + C++**:
+- **Windows 11-style taskbar** at the bottom with Start menu
+- **Custom lock screen** with NovatOS branding + clock
+- **Software rendering fallback** — works on ANY GPU (no KMS required)
+- **~150-200MB RAM** usage (lighter than KDE, GNOME, even Hyprland)
+- **Dark NovatOS theme** with cyan (#4CC2FF) accents
 
 ### Highlights
 
 | Feature | Details |
 |---|---|
-| **Base** | Arch Linux, `linux-zen` + `linux-lts` kernels |
-| **Desktop** | **Hyprland** (Wayland) — Windows 11-style with waybar + wofi, ~250MB RAM |
-| **Fallback** | Sway with pixman (software rendering) → TTY console |
-| **App Store** | **bauh** (AUR + Flatpak + Snap + AppImage — one-click installs) |
-| **Installer** | archinstall (official Arch installer, NovatOS-branded) |
-| **GPU Drivers** | AMD + Intel + NVIDIA open + llvmpipe (software fallback) |
-| **Hardware** | 2009-2026 (linux-lts kernel for old hardware) |
-| **Boot** | BIOS + UEFI hybrid, Ventoy-compatible (zstd initramfs) |
+| **Base** | Debian 12 (Bookworm) — stable, well-tested |
+| **Desktop** | **NovatOS Desktop** — custom Qt6 compositor (~150MB RAM) |
+| **Installer** | **NovatOS Installer** — modern PyQt6 graphical installer |
+| **App Store** | GNOME Software + Flatpak (one-click installs) |
+| **GPU Support** | AMD + Intel + NVIDIA + **software rendering fallback** |
+| **Hardware** | 2009-2026 (AMD R2, NVIDIA GT 240M, modern, VMs) |
+| **Boot** | BIOS + UEFI hybrid, GRUB bootloader |
+| **Live USB** | Test before installing — no changes to your disk |
 | **USB Burner** | Windows `.exe` included (NovatOSBurner.exe) |
-| **Live USB** | `dd` / Ventoy / Rufus (DD mode) / NovatOSBurner.exe |
 
 ---
 
 ## Download & Use
 
 ### Option 1: Windows .exe Burner (easiest)
-
 1. Download `NovatOSBurner.exe` from [Releases](https://github.com/salom600/NovatOS/releases)
-2. **Right-click → Run as Administrator**
-3. Click **Browse** and select the NovatOS `.iso` file
-4. Insert a USB drive (≥4GB), select it from the list
-5. Click **Write to USB** — wait for write + verification
-6. Boot from the USB
+2. Right-click → **Run as Administrator**
+3. Browse → select the NovatOS `.iso`
+4. Insert USB → select it → **Write to USB**
+5. Boot from USB
 
-### Option 2: Reassemble split ISO + dd/Ventoy/Rufus
-
-The ISO is split into ~1.9GB chunks (GitHub's 2GB-per-asset limit).
-
+### Option 2: Reassemble split ISO + dd/Ventoy
 ```bash
-# Download all .iso.partNN files, then:
 cat novatos-*.iso.part* > novatos.iso
-sha256sum -c novatos-*.sha256sum
-
-# Flash with dd (Linux/macOS):
 sudo dd if=novatos.iso of=/dev/sdX bs=4M status=progress && sync
-
-# Or use Ventoy / balenaEtcher / Rufus (DD mode)
 ```
 
 ---
 
 ## Boot Menu (2 options)
-
 | Option | Description |
 |---|---|
-| **NovatOS Live** | Boot to Hyprland desktop (for testing — works on any GPU) |
-| **NovatOS Install** | Boot directly to installer (archinstall) |
+| **NovatOS Live** | Boot to desktop (test without installing) |
+| **NovatOS Install** | Launch graphical installer |
 
 ### Login (Live Mode)
 - **Username:** `novatos`
-- **Password:** `novatos`
-
----
-
-## GPU Fallback System
-
-NovatOS Live boots on **any** hardware, even if the GPU driver is missing:
-
-1. **Try Hyprland** with GPU acceleration (AMD/Intel/NVIDIA)
-2. **Fall back to Sway** with pixman (software rendering — works on any GPU)
-3. **Fall back to TTY console** (ultimate fallback)
-
-This ensures the Live Mode always boots, from 2009-era Intel GMA to 2026 NVIDIA RTX.
-
----
-
-## App Store: bauh
-
-After first boot, `bauh` is automatically installed (via the first-run script).
-Open it from the desktop shortcut or run `bauh` in a terminal.
-
-bauh lets you install with one click:
-- **AUR** packages (Steam, games, dev tools, etc.)
-- **Flatpak** apps (from Flathub)
-- **Snap** packages
-- **AppImage** files
+- **Password:** (empty — just press Enter)
 
 ---
 
@@ -102,32 +80,46 @@ bauh lets you install with one click:
 
 ```
 NovatOS/
-├── .github/workflows/        # CI: build-iso.yml, build-burner.yml, validate.yml, auto-fix.yml
-├── archiso/novatos/          # archiso profile
-│   ├── profiledef.sh         # ISO metadata
-│   ├── packages.x86_64       # package list (Hyprland + bauh + core)
-│   ├── airootfs/             # live system root overlay
-│   │   ├── etc/skel/.config/ # Hyprland, waybar, wofi, dunst configs
-│   │   ├── root/customize_airootfs.sh
-│   │   └── usr/local/bin/    # novatos-session, novatos-install, novatos-first-run
-│   ├── efiboot/              # UEFI (systemd-boot) configs — 2 entries
-│   └── syslinux/             # BIOS syslinux configs — 2 entries
-├── burner/                   # Windows .exe USB burner
-│   ├── src/main.py           # Python source (tkinter GUI + raw disk I/O)
-│   └── build.bat             # PyInstaller build script
-└── docs/                     # design docs
+├── .github/workflows/     # CI: build-iso.yml, build-burner.yml, validate.yml
+├── build/                 # Debian live-build configuration
+│   ├── config/
+│   │   ├── package-lists/ # All packages to install
+│   │   └── hooks/normal/  # Post-install customization
+│   └── includes.chroot/   # Files copied into the ISO
+│       └── usr/local/bin/ # novatos-desktop launcher
+├── desktop/               # Custom NovatOS Desktop (Qt6/C++)
+│   ├── src/               # main.cpp, DesktopShell, Taskbar, StartMenu, LockScreen
+│   └── assets/            # Session files, config
+├── installer/             # NovatOS graphical installer (PyQt6)
+│   └── src/novatos_installer.py
+├── burner/                # Windows .exe USB burner (C + Win32)
+│   └── src/main.c
+└── docs/                  # Documentation
 ```
 
 ---
 
-## Build It Yourself
+## Key Design Decisions
 
-The ISO + .exe build 100% in GitHub Actions — no local build host required.
+### 1. Custom Desktop (not Hyprland/KDE/GNOME)
+- **Why?** Every existing DE has GPU dependencies that break on old hardware
+- **Solution:** Built our own with Qt6, which has automatic software rendering
+- **Result:** Works on AMD R2 (2009), NVIDIA GT 240M (2009), modern GPUs, VMs
 
-- **ISO build**: runs on `ubuntu-latest` in an `archlinux:latest` container via `mkarchiso`
-- **Burner build**: runs on `windows-latest` via PyInstaller → `NovatOSBurner.exe`
+### 2. Debian 12 (not Arch)
+- **Why?** Arch broke too often (rolling release = constant changes)
+- **Solution:** Debian 12 Stable — packages tested for months
+- **Result:** Rock-solid, supports all hardware, huge package repo
 
-Both publish to the same GitHub Release automatically on every push to `main`.
+### 3. Graphical Installer (not archinstall/text)
+- **Why?** Text-based installers are "poor and outdated"
+- **Solution:** Custom PyQt6 installer with modern Windows 11-style UI
+- **Result:** Beautiful, easy to use, 5-step wizard
+
+### 4. Software Rendering Fallback
+- **Why?** Old GPUs (AMD R2, GT 240M) crash with KMS drivers
+- **Solution:** Qt6 detects `nomodeset` and uses software rendering
+- **Result:** Always boots, even on unsupported GPUs
 
 ---
 

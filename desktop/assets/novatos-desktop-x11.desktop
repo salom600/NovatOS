@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=NovatOS Desktop (X11)
+Comment=NovatOS custom desktop (X11 fallback)
+Exec=/usr/local/bin/novatos-desktop --x11
+Type=Application
+DesktopNames=NovatOS
+Keywords=desktop;x11;novatos

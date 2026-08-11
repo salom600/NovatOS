@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=NovatOS Desktop
+Comment=NovatOS custom desktop (Wayland)
+Exec=/usr/local/bin/novatos-desktop
+Type=Application
+DesktopNames=NovatOS
+Keywords=desktop;wayland;novatos

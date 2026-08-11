@@ -1,215 +1,108 @@
-name: Validate Profile
-
-# Runs on every push & PR — fast lint of the archiso profile before the heavy ISO build.
-# Catches syntax errors, missing files, duplicate packages, etc., in seconds.
+name: Validate
 
 on:
   push:
-    branches: [main, master]
-    paths:
-      - 'archiso/**'
-      - '.github/workflows/validate.yml'
+    branches: [main]
   pull_request:
-    branches: [main, master]
+    branches: [main]
   workflow_dispatch:
 
 jobs:
   validate:
-    name: Validate archiso profile
+    name: Validate project structure
     runs-on: ubuntu-latest
-    container:
-      image: archlinux:latest
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install validators
+      - name: Check required files
         run: |
-          pacman -Syu --noconfirm --needed bash shellcheck python3 jq
-
-      - name: Validate profiledef.sh
-        run: |
-          bash -n archiso/novatos/profiledef.sh
-          shellcheck archiso/novatos/profiledef.sh || true
-
-      - name: Validate customize_airootfs.sh
-        run: |
-          bash -n archiso/novatos/airootfs/root/customize_airootfs.sh
-          shellcheck archiso/novatos/airootfs/root/customize_airootfs.sh || true
-
-      - name: Validate user scripts
-        run: |
-          for f in archiso/novatos/airootfs/usr/local/bin/*; do
-              [ -f "$f" ] || continue
-              echo "==> $f"
-              bash -n "$f"
-              shellcheck "$f" || true
+          echo "Checking required files..."
+          for f in \
+            build/config/package-lists/novatos-core.list.chroot \
+            build/config/hooks/normal/01-novatos-customize.hook.chroot \
+            desktop/CMakeLists.txt \
+            desktop/src/main.cpp \
+            desktop/src/DesktopShell.cpp \
+            desktop/src/DesktopShell.h \
+            desktop/src/Taskbar.cpp \
+            desktop/src/Taskbar.h \
+            desktop/src/StartMenu.cpp \
+            desktop/src/StartMenu.h \
+            desktop/src/LockScreen.cpp \
+            desktop/src/LockScreen.h \
+            desktop/src/WindowManager.cpp \
+            desktop/src/WindowManager.h \
+            installer/src/novatos_installer.py \
+            burner/src/main.c \
+            .github/workflows/build-iso.yml \
+            .github/workflows/build-burner.yml \
+            .github/workflows/validate.yml
+          do
+            if [ ! -f "$f" ]; then
+              echo "::error::Missing required file: $f"
+              exit 1
+            fi
           done
+          echo "All required files present"
 
-      - name: Check for duplicate packages
+      - name: Validate Python syntax (installer)
         run: |
-          cd archiso/novatos
-          # Strip comments and blank lines, then look for dups
-          dups=$(grep -vE '^#|^$' packages.x86_64 | sort | uniq -d)
-          if [ -n "$dups" ]; then
-              echo "::error::Duplicate packages found:"
-              echo "$dups"
-              exit 1
-          fi
-          echo "OK — no duplicate packages"
+          python3 -c "import ast; ast.parse(open('installer/src/novatos_installer.py').read())" || {
+            echo "::error::Installer Python syntax error"
+            exit 1
+          }
+          echo "Installer Python syntax OK"
 
-      - name: Check pacman.conf is valid
+      - name: Check C brace balance (burner)
         run: |
-          if [ ! -f archiso/novatos/pacman.conf ]; then
-              echo "::error::pacman.conf missing"
-              exit 1
-          fi
-          # quick sanity checks
-          grep -q '\[core\]'     archiso/novatos/pacman.conf
-          grep -q '\[extra\]'    archiso/novatos/pacman.conf
-          grep -q '\[multilib\]' archiso/novatos/pacman.conf
-          echo "pacman.conf OK"
-
-      - name: Check profiledef is valid
-        run: |
-          # shellcheck disable=SC1090
-          source archiso/novatos/profiledef.sh
-          # NOTE: archiso 89+ uses `install_dir` (not `iso_install_dir`)
-          for var in iso_name iso_label iso_version install_dir arch pacman_conf airootfs_dir; do
-              if [ -z "${!var:-}" ]; then
-                  echo "::error::profiledef.sh: $var is not set"
-                  exit 1
-              fi
-              echo "  $var = ${!var}"
-          done
-          # Also warn if the old variable name is used
-          if [ -n "${iso_install_dir:-}" ]; then
-              echo "::error::profiledef.sh: uses deprecated 'iso_install_dir' — rename to 'install_dir' (archiso 89+)"
-              exit 1
-          fi
-          echo "profiledef.sh OK"
-
-      - name: Check archiso.conf drop-in exists
-        run: |
-          if [ ! -f archiso/novatos/airootfs/etc/mkinitcpio.conf.d/archiso.conf ]; then
-              echo "::error::Missing /etc/mkinitcpio.conf.d/archiso.conf — initramfs won't have the archiso live-boot hook!"
-              exit 1
-          fi
-          # Verify it contains the archiso hook
-          if ! grep -q 'archiso' archiso/novatos/airootfs/etc/mkinitcpio.conf.d/archiso.conf; then
-              echo "::error::archiso.conf drop-in doesn't contain the 'archiso' hook"
-              exit 1
-          fi
-          echo "archiso.conf drop-in OK"
-
-      - name: Check mkinitcpio-archiso in package list
-        run: |
-          if ! grep -q '^mkinitcpio-archiso$' archiso/novatos/packages.x86_64; then
-              echo "::error::mkinitcpio-archiso not in packages.x86_64 — live-boot hooks won't be available!"
-              exit 1
-          fi
-          echo "mkinitcpio-archiso found in package list"
-
-      - name: Check boot configs (UEFI + BIOS)
-        run: |
-          # UEFI: loader.conf + entries
-          if [ ! -f archiso/novatos/efiboot/loader/loader.conf ]; then
-              echo "::error::Missing efiboot/loader/loader.conf"
-              exit 1
-          fi
-          if ! ls archiso/novatos/efiboot/loader/entries/*.conf >/dev/null 2>&1; then
-              echo "::error::No UEFI boot entries in efiboot/loader/entries/"
-              exit 1
-          fi
-          # Each UEFI entry file must contain exactly ONE title (systemd-boot: 1 entry per file)
-          for f in archiso/novatos/efiboot/loader/entries/*.conf; do
-              title_count=$(grep -cE '^title\s' "$f" || true)
-              if [ "$title_count" -gt 1 ]; then
-                  echo "::error::$(basename $f) has $title_count 'title' lines — systemd-boot requires ONE entry per file"
-                  exit 1
-              fi
-          done
-          # Check for the bug that caused "Error preparing initrd: Not found":
-          # UEFI entries must NOT reference separate intel-ucode.img / amd-ucode.img
-          if grep -rE '^\s*initrd\s+.*intel-ucode\.img|^\s*initrd\s+.*amd-ucode\.img' archiso/novatos/efiboot/loader/entries/; then
-              echo "::error::UEFI entries reference separate ucode .img files in initrd lines"
-              exit 1
-          fi
-          # UEFI entries must use %ARCH% placeholder
-          if grep -rE '/x86_64/' archiso/novatos/efiboot/loader/entries/; then
-              echo "::error::UEFI entries use hardcoded /x86_64/ — should use /%ARCH%/ placeholder"
-              exit 1
-          fi
-          # BIOS: syslinux configs
-          for f in syslinux.cfg archiso_head.cfg archiso_sys.cfg archiso_sys-linux.cfg archiso_tail.cfg; do
-              if [ ! -f "archiso/novatos/syslinux/$f" ]; then
-                  echo "::error::Missing syslinux config: $f"
-                  exit 1
-              fi
-          done
-          # Same ucode check for syslinux (only INITRD lines)
-          if grep -rE '^\s*INITRD\s+.*intel-ucode\.img|^\s*INITRD\s+.*amd-ucode\.img' archiso/novatos/syslinux/; then
-              echo "::error::Syslinux configs reference separate ucode .img files in INITRD lines"
-              exit 1
-          fi
-          # splash.png must exist
-          if [ ! -f archiso/novatos/syslinux/splash.png ]; then
-              echo "::warning::splash.png missing — syslinux will have no background image"
-          fi
-          echo "Boot configs OK"
-
-      - name: Check desktop config
-        run: |
-          # Hyprland config must exist
-          if [ ! -f archiso/novatos/airootfs/etc/skel/.config/hypr/hyprland.conf ]; then
-              echo "::error::Missing Hyprland config"
-              exit 1
-          fi
-          # Waybar config must exist
-          if [ ! -f archiso/novatos/airootfs/etc/skel/.config/waybar/config ]; then
-              echo "::error::Missing waybar config"
-              exit 1
-          fi
-          echo "Desktop config OK"
-
-      - name: Check burner source
-        run: |
-          if [ ! -f burner/src/main.c ]; then
-              echo "::error::Missing burner/src/main.c"
-              exit 1
-          fi
-          SIZE=$(wc -c < burner/src/main.c)
-          if [ "$SIZE" -lt 1000 ]; then
-              echo "::error::burner/src/main.c is too small ($SIZE bytes) — may be empty"
-              exit 1
-          fi
-          # Check for balanced braces
           OPENS=$(grep -o '{' burner/src/main.c | wc -l)
           CLOSES=$(grep -o '}' burner/src/main.c | wc -l)
           if [ "$OPENS" != "$CLOSES" ]; then
-              echo "::error::Unbalanced braces in main.c ($OPENS open, $CLOSES close)"
-              exit 1
+            echo "::error::Burner C braces unbalanced ($OPENS open, $CLOSES close)"
+            exit 1
           fi
-          echo "Burner source OK ($SIZE bytes, braces balanced)"
+          echo "Burner C braces balanced ($OPENS pairs)"
 
-      - name: Check branding files
+      - name: Check C++ brace balance (desktop)
         run: |
-          # Check that the NovatOS icon exists
-          if [ ! -f archiso/novatos/airootfs/usr/share/pixmaps/novatos.png ]; then
-              echo "::error::Missing branding file: novatos.png"
+          for f in desktop/src/*.cpp desktop/src/*.h; do
+            OPENS=$(grep -o '{' "$f" | wc -l)
+            CLOSES=$(grep -o '}' "$f" | wc -l)
+            if [ "$OPENS" != "$CLOSES" ]; then
+              echo "::error::$f braces unbalanced ($OPENS open, $CLOSES close)"
               exit 1
-          fi
-          # Check wallpaper exists
-          if [ ! -f archiso/novatos/airootfs/usr/share/wallpapers/novatos/NovatOS-Aurora.png ]; then
-              echo "::error::Missing wallpaper"
+            fi
+          done
+          echo "Desktop C++ braces balanced"
+
+      - name: Check shell scripts
+        run: |
+          for f in build/includes.chroot/usr/local/bin/novatos-desktop; do
+            bash -n "$f" || {
+              echo "::error::$f shell syntax error"
               exit 1
-          fi
-          echo "Branding files OK"
+            }
+          done
+          echo "Shell scripts OK"
+
+      - name: Validate workflow YAMLs
+        run: |
+          for f in .github/workflows/*.yml; do
+            python3 -c "import yaml; yaml.safe_load(open('$f'))" || {
+              echo "::error::$f invalid YAML"
+              exit 1
+            }
+          done
+          echo "Workflow YAMLs OK"
 
       - name: Summary
         run: |
-          echo "### Validation summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Validation Summary" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Packages: $(grep -cv '^#\|^$' archiso/novatos/packages.x86_64)" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Branding assets: $(find archiso/novatos/airootfs/usr/share -type f | wc -l) files" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Calamares modules: $(find archiso/novatos/airootfs/etc/calamares/modules -name '*.conf' | wc -l)" >> "$GITHUB_STEP_SUMMARY"
+          echo "✅ All checks passed" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Package list: $(grep -cv '^#\|^$' build/config/package-lists/novatos-core.list.chroot) packages" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Desktop source: $(find desktop/src -name '*.cpp' -o -name '*.h' | wc -l) files" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Burner source: $(wc -l < burner/src/main.c) lines" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Installer source: $(wc -l < installer/src/novatos_installer.py) lines" >> "$GITHUB_STEP_SUMMARY"

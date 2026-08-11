@@ -1,0 +1,194 @@
+#!/bin/sh
+## NovatOS post-install customization hook
+## Runs after all packages are installed in the chroot
+
+set -e
+
+echo "==> [NovatOS] Running post-install customization..."
+
+# ─── Set hostname ───
+echo "novatos" > /etc/hostname
+
+# ─── Set hosts ───
+cat > /etc/hosts <<'EOF'
+127.0.0.1   localhost
+::1         localhost
+127.0.1.1   novatos.localdomain   novatos
+EOF
+
+# ─── Locale ───
+echo "en_US.UTF-8 UTF-8" > /etc/locale.gen
+locale-gen
+echo "LANG=en_US.UTF-8" > /etc/default/locale
+echo "LC_MESSAGES=C" >> /etc/default/locale
+
+# ─── Timezone ───
+ln -sf /usr/share/zoneinfo/UTC /etc/localtime
+
+# ─── Create novatos user (if not exists) ───
+if ! id -u novatos >/dev/null 2>&1; then
+    useradd -m -G sudo,audio,video,netdev,plugdev,bluetooth,cdrom -s /bin/bash -u 1000 novatos
+    # Empty password (login without password)
+    passwd -d novatos
+    # Lock root account (no root login on live ISO)
+    passwd -l root
+fi
+
+# ─── Sudo: passwordless for novatos (live ISO only) ───
+echo "novatos ALL=(ALL:ALL) NOPASSWD: ALL" > /etc/sudoers.d/10-novatos-live
+chmod 440 /etc/sudoers.d/10-novatos-live
+
+# ─── Enable services ───
+systemctl enable NetworkManager.service 2>/dev/null || true
+systemctl enable bluetooth.service 2>/dev/null || true
+systemctl enable sddm.service 2>/dev/null || true
+systemctl enable cups.service 2>/dev/null || true
+systemctl enable avahi-daemon.service 2>/dev/null || true
+systemctl enable systemd-timesyncd.service 2>/dev/null || true
+systemctl enable systemd-resolved.service 2>/dev/null || true
+systemctl enable ufw.service 2>/dev/null || true
+systemctl enable tlp.service 2>/dev/null || true
+systemctl enable haveged.service 2>/dev/null || true
+systemctl enable qemu-guest-agent.service 2>/dev/null || true
+systemctl enable virtualbox-guest-utils.service 2>/dev/null || true
+systemctl enable open-vm-tools.service 2>/dev/null || true
+
+# ─── SDDM autologin (no password — boot straight to desktop) ───
+mkdir -p /etc/sddm.conf.d
+cat > /etc/sddm.conf.d/autologin.conf <<'EOF'
+[Autologin]
+User=novatos
+Session=novatos.desktop
+
+[Users]
+SkipPassword=true
+RememberLastUser=true
+RememberLastSession=true
+EOF
+
+cat > /etc/sddm.conf.d/theme.conf <<'EOF'
+[Theme]
+ThemeDir=/usr/share/sddm/themes
+Current=novatos
+
+[Wayland]
+EnableHiDPI=true
+CompositorCommand=weston --no-lockscreen
+
+[X11]
+EnableHiDPI=true
+ServerArguments=-nolisten tcp
+EOF
+
+# ─── PAM: allow passwordless login for novatos ───
+cat > /etc/pam.d/sddm-autologin <<'EOF'
+auth       sufficient   pam_succeed_if.so user = novatos
+auth       required     pam_permit.so
+account    include      sddm
+password   include      sddm
+session    include      sddm
+EOF
+
+# ─── Polkit: allow wheel/sudo group without password ───
+mkdir -p /etc/polkit-1/rules.d
+cat > /etc/polkit-1/rules.d/10-novatos.rules <<'EOF'
+polkit.addRule(function(action, subject) {
+    if (subject.isInGroup("sudo")) {
+        return polkit.Result.YES;
+    }
+});
+EOF
+
+# ─── Build NovatOS custom desktop (if source exists) ───
+if [ -d /usr/src/novatos-desktop ]; then
+    echo "==> [NovatOS] Building custom desktop..."
+    cd /usr/src/novatos-desktop
+    mkdir -p build && cd build
+    cmake .. -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=Release 2>&1 || true
+    make -j$(nproc) 2>&1 || true
+    make install 2>&1 || true
+    cd /
+    rm -rf /usr/src/novatos-desktop/build
+fi
+
+# ─── Install NovatOS desktop session file ───
+mkdir -p /usr/share/wayland-sessions /usr/share/xsessions
+
+# Wayland session
+cat > /usr/share/wayland-sessions/novatos.desktop <<'EOF'
+[Desktop Entry]
+Name=NovatOS Desktop
+Comment=NovatOS custom desktop (Wayland)
+Exec=/usr/local/bin/novatos-desktop
+Type=Application
+DesktopNames=NovatOS
+Keywords=desktop;wayland;novatos
+EOF
+
+# X11 session (fallback for unsupported GPUs)
+cat > /usr/share/xsessions/novatos.desktop <<'EOF'
+[Desktop Entry]
+Name=NovatOS Desktop (X11)
+Comment=NovatOS custom desktop (X11 fallback)
+Exec=/usr/local/bin/novatos-desktop --x11
+Type=Application
+DesktopNames=NovatOS
+Keywords=desktop;x11;novatos
+EOF
+
+# ─── NetworkManager config ───
+mkdir -p /etc/NetworkManager/conf.d
+cat > /etc/NetworkManager/conf.d/10-novatos.conf <<'EOF'
+[main]
+plugins=keyfile
+dns=systemd-resolved
+rc-manager=unmanaged
+
+[connectivity]
+uri=https://www.debian.org/check_network_status.txt
+interval=300
+EOF
+
+# ─── GRUB config (for installed system) ───
+mkdir -p /etc/default
+cat > /etc/default/grub <<'EOF'
+GRUB_DEFAULT=0
+GRUB_TIMEOUT=5
+GRUB_DISTRIBUTOR="NovatOS"
+GRUB_CMDLINE_LINUX_DEFAULT="quiet splash loglevel=3"
+GRUB_CMDLINE_LINUX=""
+GRUB_DISABLE_OS_PROBER=false
+GRUB_DISABLE_SUBMENU=y
+GRUB_BACKGROUND="/usr/share/novatos/wallpapers/grub-background.png"
+GRUB_THEME="/usr/share/novatos/themes/grub-theme/theme.txt"
+GRUB_GFXMODE=1920x1080,1280x1024,1024x768,auto
+GRUB_GFXPAYLOAD_LINUX=keep
+GRUB_FONT="/usr/share/grub/unicode.pf2"
+GRUB_DISABLE_RECOVERY=true
+EOF
+
+# ─── Make scripts executable ───
+chmod +x /usr/local/bin/novatos-* 2>/dev/null || true
+chmod +x /usr/lib/novatos/* 2>/dev/null || true
+
+# ─── Disable unnecessary services (save RAM) ───
+systemctl disable ModemManager.service 2>/dev/null || true
+systemctl disable rpcbind.service 2>/dev/null || true
+systemctl disable nfs-common.service 2>/dev/null || true
+
+# ─── Clean up ───
+rm -f /var/cache/apt/archives/*.deb 2>/dev/null || true
+rm -f /var/lib/apt/lists/* 2>/dev/null || true
+apt-get clean 2>/dev/null || true
+
+# ─── Create NovatOS release info ───
+cat > /etc/novatos-release <<'EOF'
+NovatOS 2026 "Aurora" (Debian 12 Bookworm)
+Desktop: NovatOS Custom (Wayland/X11)
+Installer: NovatOS Installer (graphical)
+App Store: GNOME Software + Flatpak
+Homepage: https://github.com/salom600/NovatOS
+EOF
+ln -sf /etc/novatos-release /etc/os-release
+
+echo "==> [NovatOS] Post-install customization done."

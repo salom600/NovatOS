@@ -56,25 +56,20 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Wait up to 10 minutes for the ISO build to create a release
           $retries = 60
           $release = $null
           while ($retries -gt 0) {
             try {
               $release = gh release view --repo $env:GITHUB_REPOSITORY --json tagName 2>$null | ConvertFrom-Json
-              if ($release -and $release.tagName) {
-                break
-              }
+              if ($release -and $release.tagName) { break }
             } catch {}
-            Write-Host "Waiting for ISO release to be created... ($retries retries left)"
+            Write-Host "Waiting for ISO release... ($retries retries left)"
             Start-Sleep -Seconds 10
             $retries--
           }
-
           if ($release) {
             Write-Host "Uploading NovatOSBurner.exe to release: $($release.tagName)"
             gh release upload $release.tagName burner/NovatOSBurner.exe --repo $env:GITHUB_REPOSITORY --clobber
           } else {
-            Write-Host "No existing release found — creating a new one for the burner"
-            gh release create "burner-${{ github.run_number }}" burner/NovatOSBurner.exe --repo $env:GITHUB_REPOSITORY --title "NovatOS Burner (Build ${{ github.run_number }})" --notes "Windows USB burner .exe (C + Win32 API)"
+            gh release create "burner-${{ github.run_number }}" burner/NovatOSBurner.exe --repo $env:GITHUB_REPOSITORY --title "NovatOS Burner (Build ${{ github.run_number }})" --notes "Windows USB burner .exe"
           }

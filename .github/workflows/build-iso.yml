@@ -2,301 +2,145 @@ name: Build NovatOS ISO
 
 on:
   push:
-    branches: [main, master]
+    branches: [main]
     paths-ignore:
       - 'README.md'
       - 'docs/**'
       - 'LICENSE'
-      - '.gitignore'
   pull_request:
-    branches: [main, master]
+    branches: [main]
   workflow_dispatch:
-    inputs:
-      debug_build:
-        description: 'Run with extra debugging output'
-        required: false
-        default: 'false'
-        type: choice
-        options: ['true', 'false']
 
 env:
-  ISO_NAME: novatos
-  PROFILE_DIR: archiso/novatos
   ARTIFACT_RETENTION_DAYS: 14
 
 jobs:
   build:
-    name: Build ISO (archlinux container)
+    name: Build ISO (Debian 12 live-build)
     runs-on: ubuntu-latest
     timeout-minutes: 90
-    container:
-      image: archlinux:latest
-      options: --privileged --cap-add=SYS_ADMIN --device /dev/fuse
 
     permissions:
-      contents: write   # required to publish GitHub Releases
-      actions: write    # required to trigger auto-fix workflow
-      packages: write
+      contents: write
+      actions: write
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
 
-      # ----- Prepare container -----
-      - name: Prepare Arch container
+      - name: Install live-build + dependencies
         run: |
-          set -euo pipefail
-          # Initialize pacman keyring
-          pacman-key --init
-          pacman-key --populate archlinux
+          sudo apt-get update
+          sudo apt-get install -y live-build debootstrap squashfs-tools xorriso grub-pc-bin grub-efi-amd64-bin mtools
 
-          # Pre-seed mirrorlist with KNOWN-GOOD mirrors (reflector sometimes picks slow ones)
-          cat > /etc/pacman.d/mirrorlist <<'MIRRORLIST'
-          Server = https://geo.mirror.pkgbuild.com/$repo/os/$arch
-          Server = https://mirror.rackspace.com/archlinux/$repo/os/$arch
-          Server = https://mirror.leaseweb.net/archlinux/$repo/os/$arch
-          Server = https://arch.mirror.square-r00t.net/$repo/os/$arch
-          Server = https://mirror.arizona.edu/archlinux/$repo/os/$arch
-          MIRRORLIST
-
-          # Refresh repo databases — retry up to 5 times on failure (mirror timeouts)
-          for attempt in 1 2 3 4 5; do
-              echo "==> pacman -Sy attempt $attempt/5..."
-              if pacman -Sy --noconfirm; then
-                  echo "==> pacman -Sy OK"
-                  break
-              fi
-              if [ "$attempt" -eq 5 ]; then
-                  echo "::error::Failed to sync pacman databases after 5 attempts"
-                  exit 1
-              fi
-              sleep 5
-          done
-
-          # Install archiso + build deps — also with retry
-          for attempt in 1 2 3; do
-              if pacman -S --noconfirm --needed \
-                  archiso git curl reflector bash ca-certificates \
-                  dosfstools squashfs-tools lz4 zstd xorriso mtools grub edk2-ovmf; then
-                  break
-              fi
-              if [ "$attempt" -eq 3 ]; then
-                  echo "::error::Failed to install build deps after 3 attempts"
-                  exit 1
-              fi
-              sleep 5
-          done
-
-          # Try to refresh mirrorlist with reflector (best-effort; keep seed if it fails)
-          reflector --protocol https --latest 30 --sort rate --age 12 \
-                    --save /etc/pacman.d/mirrorlist --download-timeout 10 || \
-              echo "  [warn] reflector failed; keeping seed mirrorlist"
-
-          # Re-sync with the new mirrorlist
-          pacman -Sy --noconfirm || true
-
-      - name: Show environment
+      - name: Copy NovatOS desktop source
         run: |
-          echo "=== archiso version ==="
-          pacman -Q archiso
-          echo "=== profile ==="
-          ls -la "${PROFILE_DIR}/"
-          echo "=== profiledef ==="
-          cat "${PROFILE_DIR}/profiledef.sh"
+          # Copy the desktop source into the chroot so it gets compiled during build
+          mkdir -p build/includes.chroot/usr/src/novatos-desktop
+          cp -r desktop/* build/includes.chroot/usr/src/novatos-desktop/
 
-      # ----- Build -----
+          # Copy the installer
+          mkdir -p build/includes.chroot/usr/local/bin
+          cp installer/src/novatos_installer.py build/includes.chroot/usr/local/bin/novatos-installer
+          chmod +x build/includes.chroot/usr/local/bin/novatos-installer
+
+          # Copy the desktop launcher script
+          chmod +x build/includes.chroot/usr/local/bin/novatos-desktop
+
       - name: Build ISO
         id: build
         run: |
-          set -euo pipefail
-          BUILD_DIR="$(pwd)/build"
-          OUT_DIR="$(pwd)/out"
-          mkdir -p "$BUILD_DIR" "$OUT_DIR"
+          cd build
+          lb config --distribution bookworm --architecture amd64 \
+            --binary-images iso-hybrid --chroot-filesystem squashfs \
+            --compression xz --bootloaders grub-pc,grub-efi-amd64 \
+            --debian-installer none --interactive false
 
-          echo "::group::mkarchiso output"
-          # Run mkarchiso — this is the heavy step (typically 15-40 min on CI)
-          mkarchiso -v -w "$BUILD_DIR" -o "$OUT_DIR" "${PROFILE_DIR}"
+          echo "::group::live-build output"
+          sudo lb build 2>&1 | tee build.log
           echo "::endgroup::"
 
           # Find produced ISO
-          ISO_FILE="$(ls -1 "$OUT_DIR"/*.iso 2>/dev/null | head -1)"
+          ISO_FILE=$(ls -1 *.iso 2>/dev/null | head -1)
           if [ -z "$ISO_FILE" ]; then
-              echo "::error::No ISO produced in $OUT_DIR"
-              ls -la "$OUT_DIR"
-              exit 1
+            echo "::error::No ISO produced"
+            ls -la
+            exit 1
           fi
 
-          # Extract version (YYYY.MM.DD from profiledef)
-          ISO_VERSION="$(date +%Y.%m.%d)"
-          ISO_BASENAME="$(basename "$ISO_FILE")"
-          ISO_SIZE="$(du -h "$ISO_FILE" | cut -f1)"
-          SHA256="$(sha256sum "$ISO_FILE" | cut -d' ' -f1)"
+          ISO_SIZE=$(du -h "$ISO_FILE" | cut -f1)
+          SHA256=$(sha256sum "$ISO_FILE" | cut -d' ' -f1)
+          echo "iso_path=$(pwd)/$ISO_FILE" >> "$GITHUB_OUTPUT"
+          echo "iso_basename=$ISO_FILE" >> "$GITHUB_OUTPUT"
+          echo "iso_version=$(date +%Y.%m.%d)" >> "$GITHUB_OUTPUT"
+          echo "iso_size=$ISO_SIZE" >> "$GITHUB_OUTPUT"
+          echo "iso_sha256=$SHA256" >> "$GITHUB_OUTPUT"
+          echo "$SHA256  $ISO_FILE" > "${ISO_FILE}.sha256sum"
 
-          echo "iso_path=$ISO_FILE"               >> "$GITHUB_OUTPUT"
-          echo "iso_basename=$ISO_BASENAME"       >> "$GITHUB_OUTPUT"
-          echo "iso_version=$ISO_VERSION"         >> "$GITHUB_OUTPUT"
-          echo "iso_size=$ISO_SIZE"               >> "$GITHUB_OUTPUT"
-          echo "iso_sha256=$SHA256"               >> "$GITHUB_OUTPUT"
-
-          # Save sha256 next to the ISO
-          echo "$SHA256  $ISO_BASENAME" > "$OUT_DIR/$ISO_BASENAME.sha256sum"
-
-          echo "=== Build OK ==="
-          echo "ISO:  $ISO_BASENAME"
-          echo "Size: $ISO_SIZE"
-          echo "SHA:  $SHA256"
-
-      # ----- Upload artifact (always, even on PRs) -----
       - name: Upload ISO artifact
-        if: always() && steps.build.outcome == 'success'
+        if: steps.build.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: novatos-iso-${{ steps.build.outputs.iso_version }}
           path: |
-            out/*.iso
-            out/*.sha256sum
+            build/*.iso
+            build/*.sha256sum
           retention-days: ${{ env.ARTIFACT_RETENTION_DAYS }}
-          compression-level: 0   # ISOs are already compressed
+          compression-level: 0
 
-      # ----- Upload build logs (always, even on failure) -----
       - name: Upload build logs
         if: always()
-        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: build-logs-${{ github.run_id }}
-          # Only upload out/ (with the ISO) — the build/ dir contains files
-          # with colons in their names (ModemManager fcc-unlock.available.d/03f0:4e1d)
-          # which break GitHub Actions artifact uploads on NTFS-hostile paths.
-          path: |
-            out/
+          path: build/build.log
           retention-days: 7
           if-no-files-found: ignore
 
-      # ----- Split ISO into chunks for GitHub Releases (each asset must be < 2GB) -----
       - name: Split ISO for release
-        if: always() && steps.build.outcome == 'success' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        if: success() && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         id: split
         run: |
-            set -euo pipefail
-            cd out
-            ISO_FILE="$(ls -1 *.iso | head -1)"
-            ISO_BASENAME="$(basename "$ISO_FILE" .iso)"
-            echo "Splitting $ISO_FILE into 1.9GB chunks..."
-            # Split into 1.9GB chunks (GitHub Releases asset limit is 2GB)
-            split -b 1900M -d -a 2 "$ISO_FILE" "${ISO_BASENAME}.iso.part"
-            # Generate reassembly instructions + manifest
-            cat > "${ISO_BASENAME}.README.txt" <<EOF
-            NovatOS ISO — Reassembly Instructions
-            =====================================
+          cd build
+          ISO_FILE=$(ls -1 *.iso | head -1)
+          ISO_BASENAME=$(basename "$ISO_FILE" .iso)
+          split -b 1900M -d -a 2 "$ISO_FILE" "${ISO_BASENAME}.iso.part"
+          echo "chunk_count=$(ls -1 ${ISO_BASENAME}.iso.part* | wc -l)" >> "$GITHUB_OUTPUT"
 
-            This ISO was split into multiple chunks because GitHub Releases
-            has a 2GB-per-asset limit. To reassemble:
-
-            1. Download ALL .iso.partNN files (e.g. .iso.part00, .iso.part01, ...)
-               and this README.txt to the same directory.
-            2. Concatenate them back into a single ISO:
-                  cat ${ISO_BASENAME}.iso.part* > ${ISO_BASENAME}.iso
-            3. Verify the SHA256 matches:
-                  sha256sum ${ISO_BASENAME}.iso
-               Expected: ${{ steps.build.outputs.iso_sha256 }}
-            4. Flash the ISO to a USB drive:
-                  sudo dd if=${ISO_BASENAME}.iso of=/dev/sdX bs=4M status=progress && sync
-               Or use Ventoy / balenaEtcher / Rufus (DD mode).
-            5. Boot from the USB. Choose "NovatOS Live".
-
-            Total size: ${{ steps.build.outputs.iso_size }}
-            SHA256:     ${{ steps.build.outputs.iso_sha256 }}
-            EOF
-            # Generate per-chunk sha256 for verification
-            sha256sum ${ISO_BASENAME}.iso.part* > "${ISO_BASENAME}.sha256sum"
-            sha256sum "$ISO_FILE" >> "${ISO_BASENAME}.sha256sum"
-            ls -la
-            echo "chunk_count=$(ls -1 ${ISO_BASENAME}.iso.part* | wc -l)" >> "$GITHUB_OUTPUT"
-
-      # ----- Publish to GitHub Releases -----
       - name: Publish to GitHub Releases
-        if: always() && steps.build.outcome == 'success' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        if: success() && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.build.outputs.iso_version }}-${{ github.run_number }}
           name: NovatOS ${{ steps.build.outputs.iso_version }} (Build #${{ github.run_number }})
           body: |
-            # NovatOS Aurora (Hyprland Edition) — ${{ steps.build.outputs.iso_version }}
+            # NovatOS Aurora (Debian 12) — ${{ steps.build.outputs.iso_version }}
 
             **Build #${{ github.run_number }}** · commit `${{ github.sha }}`
 
             ## What's New
-            - **Hyprland desktop** (~250MB RAM, Windows 11-style with waybar + wofi)
-            - **bauh app store** (AUR + Flatpak + Snap + AppImage — one-click installs)
-            - **2 boot modes:** Live Mode (test) + Install Mode (permanent install)
-            - **GPU fallback:** Hyprland → Sway+pixman → TTY (works on ANY GPU, 2009-2026)
+            - **Debian 12 (Bookworm) base** — rock-solid stable foundation
+            - **Custom NovatOS Desktop** — built with Qt6, ~150-200MB RAM
+            - **Modern graphical installer** — Windows 11-style, easy to use
+            - **GPU fallback** — works on any GPU (AMD R2, NVIDIA GT 240M, modern, VMs)
             - **Windows .exe USB burner** included (NovatOSBurner.exe)
-            - **linux-lts kernel** for 2009-era hardware compatibility
+            - **2 boot modes:** Live (test) + Install (permanent)
 
             ## Download
+            - **ISO:** ${{ steps.split.outputs.chunk_count }} chunks (~1.9GB each)
+            - **Burner:** NovatOSBurner.exe (53 KB)
+            Reassemble: `cat novatos-*.iso.part* > novatos.iso`
 
-            ### ISO (split into chunks — GitHub 2GB limit)
-            ${{ steps.split.outputs.chunk_count }} chunks of ~1.9GB each.
-            Reassemble:
-            ```bash
-            cat novatos-*.iso.part* > novatos-${{ steps.build.outputs.iso_version }}-x86_64.iso
-            sha256sum -c novatos-*.sha256sum
-            ```
+            ## Boot Menu
+            1. **NovatOS Live** — boot to desktop (no install)
+            2. **NovatOS Install** — graphical installer
 
-            ### Windows USB Burner (.exe)
-            Download `NovatOSBurner.exe` from the assets below.
-            Run it as Administrator, select the ISO + USB drive, click "Write to USB".
-
-            ### Alternative: Flash with dd / Ventoy / Rufus (DD mode)
-            ```bash
-            sudo dd if=novatos-*.iso of=/dev/sdX bs=4M status=progress && sync
-            ```
-
-            ## Boot Menu (2 options)
-            1. **NovatOS Live** — boot to Hyprland desktop (for testing)
-            2. **NovatOS Install** — boot directly to installer (archinstall)
-
-            ## Login (Live Mode)
-            - Username: `novatos`
-            - Password: `novatos`
-
-            ## Highlights
-            - Hyprland (Wayland) with Windows 11-style taskbar + Start menu
-            - Sway fallback (software rendering) for unsupported GPUs
-            - All GPU drivers (AMD, Intel, NVIDIA open) + llvmpipe fallback
-            - 2009-2026 hardware support (linux-lts kernel)
-            - BIOS + UEFI hybrid boot, Ventoy-compatible (zstd initramfs)
-            - bauh app store (install Steam, LibreOffice, etc. with one click)
-
-            ---
-            Built by GitHub Actions. [View run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            ## Login
+            - **Username:** novatos
+            - **Password:** (empty — just press Enter)
           files: |
-            out/*.iso.part*
-            out/*.sha256sum
-            out/*.README.txt
+            build/*.iso.part*
+            build/*.sha256sum
           draft: false
           prerelease: false
           fail_on_unmatched_files: true
-
-      # ----- Trigger auto-fix workflow on failure (via GitHub API, no third-party action) -----
-      - name: Notify auto-fix workflow
-        if: failure() && github.event_name != 'pull_request'
-        run: |
-          set -euo pipefail
-          echo "Build failed — dispatching Auto-fix Build workflow via GitHub API..."
-          curl -sSL -X POST \
-            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/auto-fix.yml/dispatches" \
-            -d "{
-              \"ref\": \"${{ github.ref_name }}\",
-              \"inputs\": {
-                \"run_id\": \"${{ github.run_id }}\",
-                \"commit_sha\": \"${{ github.sha }}\",
-                \"branch\": \"${{ github.ref_name }}\"
-              }
-            }"
-          echo "Auto-fix workflow dispatched."

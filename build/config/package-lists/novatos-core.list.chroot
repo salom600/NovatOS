@@ -1,0 +1,312 @@
+## ─── NovatOS Core System Foundation ───
+## Minimal Debian 12 base + essential utilities
+
+# ─── Kernel: standard + LTS for 2009-2026 hardware ───
+linux-image-amd64
+linux-headers-amd64
+linux-image-cloud-amd64
+
+# ─── Firmware: ALL hardware support ───
+firmware-linux
+firmware-linux-nonfree
+firmware-amd-graphics
+firmware-misc-nonfree
+firmware-intel-sound
+firmware-iwlwifi
+firmware-realtek
+firmware-brcm80211
+firmware-atheros
+firmware-qcom-soc
+firmware-samsung
+firmware-nvidia-graphics
+firmware-qlogic
+firmware-libertas
+
+# ─── Base system ───
+base-files
+base-passwd
+bash
+bash-completion
+bsdutils
+coreutils
+debianutils
+diffutils
+e2fsprogs
+file
+findutils
+grep
+gzip
+hostname
+init-system-helpers
+login
+mount
+ncurses-base
+ncurses-bin
+passwd
+perl-base
+sed
+tar
+util-linux
+zstd
+xz-utils
+
+# ─── Init system ───
+systemd
+systemd-sysv
+dbus
+systemd-timesyncd
+
+# ─── Network ───
+network-manager
+network-manager-gnome
+wpasupplicant
+wireless-tools
+iw
+dnsmasq-base
+modemmanager
+mobile-broadband-provider-info
+ppp
+pptp-linux
+openvpn
+wireguard-tools
+openssh-client
+openssh-server
+curl
+wget
+ca-certificates
+
+# ─── Filesystem tools ───
+btrfs-progs
+e2fsprogs
+dosfstools
+exfatprogs
+ntfs-3g
+f2fs-tools
+xfsprogs
+udisks2
+polkitd
+policykit-1-gnome
+
+# ─── Bootloader ───
+grub-pc-bin
+grub-efi-amd64-bin
+grub-efi-amd64-signed
+shim-signed
+mtools
+
+# ─── Hardware tools ───
+lsb-release
+lshw
+pciutils
+usbutils
+dmidecode
+acpi
+acpid
+smartmontools
+hdparm
+nvme-cli
+lm-sensors
+fdisk
+gdisk
+parted
+gparted
+
+# ─── Audio (PipeWire) ───
+pipewire
+pipewire-audio
+pipewire-alsa
+pipewire-pulse
+pipewire-jack
+pipewire-bin
+wireplumber
+pulseaudio-utils
+pavucontrol
+alsa-utils
+alsa-tools
+alsa-firmware-loaders
+sof-firmware
+
+# ─── Bluetooth ───
+bluez
+bluez-tools
+blueman
+
+# ─── Power management ───
+tlp
+tlp-rdw
+upower
+acpi-call-dkms
+cpufrequtils
+
+# ─── GPU drivers: ALL vendors ───
+# Mesa (AMD/Intel open-source)
+mesa-va-drivers
+mesa-vulkan-drivers
+libgl1-mesa-dri
+va-driver-all
+vulkan-tools
+vulkan-validationlayers
+
+# NVIDIA (proprietary — supports old + new cards)
+nvidia-driver
+nvidia-kernel-dkms
+nvidia-vdpau-driver
+nvidia-cuda-toolkit
+libnvidia-egl-wayland1
+nvidia-egl-gbm
+
+# AMD (open-source, already in mesa + firmware-amd-graphics)
+libgl1-mesa-dri
+
+# Intel (open-source, already in mesa)
+intel-media-va-driver
+intel-microcode
+amd64-microcode
+
+# ─── Display server: X11 + Wayland (both for compatibility) ───
+xserver-xorg
+xserver-xorg-video-all
+xserver-xorg-video-nvidia
+xserver-xorg-video-amdgpu
+xserver-xorg-video-ati
+xserver-xorg-video-intel
+xserver-xorg-video-nouveau
+xserver-xorg-input-all
+xwayland
+weston
+
+# ─── Fonts ───
+fonts-noto-core
+fonts-noto-extra
+fonts-noto-cjk
+fonts-noto-color-emoji
+fonts-dejavu-core
+fonts-liberation2
+fonts-hack-ttf
+fonts-roboto-unhinted
+
+# ─── Themes ───
+gnome-icon-theme
+adwaita-icon-theme
+papirus-icon-theme
+qvidentity
+qt5ct
+qt6ct
+kvantum-qt5
+kvantum-qt6
+
+# ─── SDDM (display manager — our custom theme) ───
+sddm
+sddm-theme-breeze
+
+# ─── Build tools (for compiling our custom desktop) ───
+build-essential
+cmake
+ninja-build
+pkg-config
+git
+qt6-base-dev
+qt6-declarative-dev
+qt6-tools-dev
+qt6-wayland-dev
+libwayland-dev
+libxkbcommon-dev
+libegl-dev
+libgles2-mesa-dev
+libpipewire-0.3-dev
+libpolkit-qt5-1-dev
+libpulse-dev
+
+# ─── Python (for installer + tools) ───
+python3
+python3-pip
+python3-pyqt6
+python3-requests
+python3-yaml
+
+# ─── App store: bauh + Flatpak + Snap ───
+flatpak
+gnome-software
+python3-venv
+
+# ─── Gaming ───
+steam
+steam-devices
+gamescope
+mangohud
+gamemode
+wine
+wine64
+winetricks
+protonup-qt
+lutris
+
+# ─── Media ───
+mpv
+vlc
+ffmpeg
+gstreamer1.0-plugins-base
+gstreamer1.0-plugins-good
+gstreamer1.0-plugins-bad
+gstreamer1.0-plugins-ugly
+gstreamer1.0-libav
+gstreamer1.0-vaapi
+
+# ─── Browsers ───
+firefox-esr
+firefox-esr-l10n-en-us
+
+# ─── Office (minimal) ───
+file-roller
+evince
+gnome-screenshot
+baobab
+
+# ─── Terminal ───
+qterminal
+foot
+tmux
+
+# ─── Text editors ───
+nano
+vim
+neovim
+
+# ─── Virtual machine support ───
+qemu-guest-agent
+virtualbox-guest-utils
+hyperv-daemons
+open-vm-tools
+
+# ─── Security ───
+ufw
+guFW
+firewalld
+gnome-keyring
+libpam-gnome-keyring
+seahorse
+
+# ─── Compression ───
+p7zip-full
+unrar
+unzip
+zip
+bzip2
+
+# ─── Misc utilities ───
+htop
+btop
+fastfetch
+bat
+fd-find
+ripgrep
+fzf
+tree
+less
+man-db
+manpages
+manpages-dev
+zeitgeist
+zenity
+notify-osd
+libnotify-bin
