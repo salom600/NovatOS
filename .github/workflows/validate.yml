@@ -62,7 +62,7 @@ jobs:
       - name: Check C++ brace balance (desktop, if exists)
         run: |
           if [ -d desktop/src ]; then
-            for f in desktop/src/*.cpp desktop/src/*.h 2>/dev/null; do
+            for f in desktop/src/*.cpp desktop/src/*.h; do
               [ -f "$f" ] || continue
               OPENS=$(grep -o '{' "$f" | wc -l)
               CLOSES=$(grep -o '}' "$f" | wc -l)
