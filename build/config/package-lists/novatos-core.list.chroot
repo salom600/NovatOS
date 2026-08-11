@@ -4,23 +4,21 @@
 # ─── Kernel: standard + LTS for 2009-2026 hardware ───
 linux-image-amd64
 linux-headers-amd64
-linux-image-cloud-amd64
 
 # ─── Firmware: ALL hardware support ───
 firmware-linux
 firmware-linux-nonfree
 firmware-amd-graphics
 firmware-misc-nonfree
-firmware-intel-sound
 firmware-iwlwifi
 firmware-realtek
 firmware-brcm80211
 firmware-atheros
 firmware-qcom-soc
 firmware-samsung
-firmware-nvidia-graphics
 firmware-qlogic
 firmware-libertas
+firmware-sof-signed
 
 # ─── Base system ───
 base-files
@@ -124,7 +122,6 @@ pavucontrol
 alsa-utils
 alsa-tools
 alsa-firmware-loaders
-sof-firmware
 
 # ─── Bluetooth ───
 bluez
@@ -135,7 +132,6 @@ blueman
 tlp
 tlp-rdw
 upower
-acpi-call-dkms
 cpufrequtils
 
 # ─── GPU drivers: ALL vendors ───
@@ -145,25 +141,19 @@ mesa-vulkan-drivers
 libgl1-mesa-dri
 va-driver-all
 vulkan-tools
-vulkan-validationlayers
 
-# NVIDIA (proprietary — supports old + new cards)
+# NVIDIA (proprietary)
 nvidia-driver
 nvidia-kernel-dkms
 nvidia-vdpau-driver
-nvidia-cuda-toolkit
 libnvidia-egl-wayland1
-nvidia-egl-gbm
 
-# AMD (open-source, already in mesa + firmware-amd-graphics)
-libgl1-mesa-dri
-
-# Intel (open-source, already in mesa)
+# Intel
 intel-media-va-driver
 intel-microcode
 amd64-microcode
 
-# ─── Display server: X11 + Wayland (both for compatibility) ───
+# ─── Display server: X11 + Wayland ───
 xserver-xorg
 xserver-xorg-video-all
 xserver-xorg-video-nvidia
@@ -183,21 +173,17 @@ fonts-noto-color-emoji
 fonts-dejavu-core
 fonts-liberation2
 fonts-hack-ttf
-fonts-roboto-unhinted
 
 # ─── Themes ───
 gnome-icon-theme
 adwaita-icon-theme
 papirus-icon-theme
-qvidentity
 qt5ct
 qt6ct
-kvantum-qt5
-kvantum-qt6
+kvantum
 
 # ─── SDDM (display manager — our custom theme) ───
 sddm
-sddm-theme-breeze
 
 # ─── Build tools (for compiling our custom desktop) ───
 build-essential
@@ -224,22 +210,18 @@ python3-pyqt6
 python3-requests
 python3-yaml
 
-# ─── App store: bauh + Flatpak + Snap ───
+# ─── App store: Flatpak + GNOME Software ───
 flatpak
 gnome-software
-python3-venv
 
 # ─── Gaming ───
-steam
-steam-devices
-gamescope
-mangohud
-gamemode
 wine
 wine64
 winetricks
-protonup-qt
 lutris
+gamescope
+mangohud
+gamemode
 
 # ─── Media ───
 mpv
@@ -254,7 +236,6 @@ gstreamer1.0-vaapi
 
 # ─── Browsers ───
 firefox-esr
-firefox-esr-l10n-en-us
 
 # ─── Office (minimal) ───
 file-roller
@@ -270,17 +251,15 @@ tmux
 # ─── Text editors ───
 nano
 vim
-neovim
 
 # ─── Virtual machine support ───
 qemu-guest-agent
-virtualbox-guest-utils
-hyperv-daemons
 open-vm-tools
+hyperv-daemons
 
 # ─── Security ───
 ufw
-guFW
+gufw
 firewalld
 gnome-keyring
 libpam-gnome-keyring
@@ -296,7 +275,7 @@ bzip2
 # ─── Misc utilities ───
 htop
 btop
-fastfetch
+neofetch
 bat
 fd-find
 ripgrep
@@ -305,8 +284,6 @@ tree
 less
 man-db
 manpages
-manpages-dev
-zeitgeist
 zenity
-notify-osd
 libnotify-bin
+notify-osd
