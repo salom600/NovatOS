@@ -32,6 +32,17 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y live-build debootstrap squashfs-tools xorriso grub-pc-bin grub-efi-amd64-bin mtools
+          # Install Debian keyring (Ubuntu runner doesn't have it by default)
+          sudo apt-get install -y debian-archive-keyring
+          # Download Debian debootstrap config (Ubuntu's debootstrap may not know "bookworm")
+          sudo mkdir -p /usr/share/debootstrap/scripts
+          if [ ! -f /usr/share/debootstrap/scripts/bookworm ]; then
+            sudo ln -sf /usr/share/debootstrap/scripts/sid /usr/share/debootstrap/scripts/bookworm 2>/dev/null || true
+            # If sid doesn't exist either, download from Debian
+            if [ ! -f /usr/share/debootstrap/scripts/bookworm ]; then
+              sudo wget -q -O /usr/share/debootstrap/scripts/bookworm https://salsa.debian.org/installer-team/debootstrap/-/raw/master/scripts/bookworm || true
+            fi
+          fi
 
       - name: Copy NovatOS desktop source
         run: |
