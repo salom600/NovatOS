@@ -52,6 +52,8 @@ jobs:
         run: |
           cd build
           # Configure live-build (Debian 12 Bookworm)
+          # All mirrors must point to Debian (not Ubuntu) — the runner is Ubuntu
+          # but we're building Debian, so debootstrap needs Debian repos.
           lb config \
             --distribution bookworm \
             --architecture amd64 \
@@ -63,6 +65,9 @@ jobs:
             --interactive false \
             --mirror-bootstrap "http://deb.debian.org/debian/" \
             --mirror-binary "http://deb.debian.org/debian/" \
+            --mirror-chroot "http://deb.debian.org/debian/" \
+            --mirror-chroot-security "http://security.debian.org/debian-security/" \
+            --mirror-binary-security "http://security.debian.org/debian-security/" \
             --bootappend-live "boot=live components nomodeset quiet splash"
 
           echo "::group::live-build output"
@@ -74,7 +79,8 @@ jobs:
           if [ -z "$ISO_FILE" ]; then
             echo "::error::No ISO produced"
             ls -la
-            cat build.log | tail -50
+            echo "=== Last 80 lines of build log ==="
+            tail -80 build.log
             exit 1
           fi
 
