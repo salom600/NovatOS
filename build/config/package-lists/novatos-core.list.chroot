@@ -163,22 +163,28 @@ xserver-xorg-video-intel
 xserver-xorg-video-nouveau
 xserver-xorg-input-all
 
-# ─── Desktop stack: openbox + tint2 + nitrogen (reliable, lightweight) ───
-# NOTE: Do NOT install plasma-desktop, weston, or other DEs — they add session
-# files to /usr/share/xsessions and /usr/share/wayland-sessions that show up
-# in the SDDM session picker. We want ONLY NovatOS Desktop.
-openbox
-tint2
-nitrogen
-pcmanfm
+# ─── Desktop: XFCE (proven, lightweight, themeable, works on ALL hardware) ───
+# XFCE is a complete DE with panel, session manager, settings — no launch issues.
+# We theme it with NovatOS dark colors to look like Windows 11.
+xfce4
 xfce4-terminal
-xfconf
-lxappearance
-obconf
-dmenu
-i3lock
-scrot
-imagemagick
+xfce4-panel
+xfce4-session
+xfce4-settings
+xfce4-appfinder
+xfce4-pulseaudio-plugin
+xfce4-whiskermenu-plugin
+xfce4-power-manager
+xfce4-screenshooter
+xfce4-taskmanager
+xfce4-notifyd
+xfwm4
+xfdesktop
+thunar
+thunar-volman
+thunar-archive-plugin
+gnome-icon-theme
+papirus-icon-theme
 
 # ─── Fonts ───
 fonts-noto-core

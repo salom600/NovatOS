@@ -21,13 +21,6 @@ jobs:
           for f in \
             build/config/package-lists/novatos-core.list.chroot \
             build/config/hooks/normal/01-novatos-customize.hook.chroot \
-            build/includes.chroot/usr/local/bin/novatos-desktop \
-            build/includes.chroot/usr/local/bin/novatos-menu \
-            build/includes.chroot/usr/local/bin/novatos-lock \
-            build/includes.chroot/etc/skel/.config/tint2/tint2rc \
-            build/includes.chroot/etc/skel/.config/openbox/rc.xml \
-            build/includes.chroot/etc/skel/.config/nitrogen/bg-saved.cfg \
-            build/includes.chroot/etc/skel/Desktop/install-novatos.desktop \
             installer/src/novatos_installer.py \
             burner/src/main.c \
             .github/workflows/build-iso.yml \

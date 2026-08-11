@@ -39,20 +39,13 @@ jobs:
             grub-pc-bin grub-efi-amd64-bin grub-efi-amd64-signed mtools \
             debian-archive-keyring ca-certificates wget git
 
-      - name: Copy NovatOS installer + scripts
+      - name: Copy NovatOS installer
         run: |
-          # Copy the installer
+          # Copy the Python installer into includes.chroot
+          # (the hook will make it executable and verify it exists)
           mkdir -p build/includes.chroot/usr/local/bin
-          cp installer/src/novatos_installer.py build/includes.chroot/usr/local/bin/novatos-installer
-          chmod +x build/includes.chroot/usr/local/bin/novatos-installer
-
-          # Make ALL scripts executable (critical — SDDM can't launch non-executable scripts)
-          chmod +x build/includes.chroot/usr/local/bin/novatos-desktop
-          chmod +x build/includes.chroot/usr/local/bin/novatos-menu
-          chmod +x build/includes.chroot/usr/local/bin/novatos-lock
-
-          # Verify they're executable
-          ls -la build/includes.chroot/usr/local/bin/novatos-*
+          cp installer/src/novatos_installer.py build/includes.chroot/usr/local/bin/novatos_installer.py
+          chmod +x build/includes.chroot/usr/local/bin/novatos_installer.py
 
       - name: Build ISO
         id: build

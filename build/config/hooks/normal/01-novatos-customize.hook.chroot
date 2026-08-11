@@ -1,6 +1,8 @@
 #!/bin/sh
 ## NovatOS post-install customization hook
-## Runs after all packages are installed in the chroot
+## Runs INSIDE the chroot after all packages are installed.
+## ALL scripts and configs are created HERE (not via includes.chroot)
+## to guarantee they exist and are executable.
 
 set -e
 
@@ -20,21 +22,18 @@ EOF
 echo "en_US.UTF-8 UTF-8" > /etc/locale.gen
 locale-gen
 echo "LANG=en_US.UTF-8" > /etc/default/locale
-echo "LC_MESSAGES=C" >> /etc/default/locale
 
 # ─── Timezone ───
 ln -sf /usr/share/zoneinfo/UTC /etc/localtime
 
-# ─── Create novatos user (if not exists) ───
+# ─── Create novatos user ───
 if ! id -u novatos >/dev/null 2>&1; then
     useradd -m -G sudo,audio,video,netdev,plugdev,bluetooth,cdrom -s /bin/bash -u 1000 novatos
-    # Empty password (login without password)
     passwd -d novatos
-    # Lock root account (no root login on live ISO)
     passwd -l root
 fi
 
-# ─── Sudo: passwordless for novatos (live ISO only) ───
+# ─── Sudo: passwordless for novatos ───
 echo "novatos ALL=(ALL:ALL) NOPASSWD: ALL" > /etc/sudoers.d/10-novatos-live
 chmod 440 /etc/sudoers.d/10-novatos-live
 
@@ -50,42 +49,112 @@ systemctl enable ufw.service 2>/dev/null || true
 systemctl enable tlp.service 2>/dev/null || true
 systemctl enable haveged.service 2>/dev/null || true
 systemctl enable qemu-guest-agent.service 2>/dev/null || true
-systemctl enable virtualbox-guest-utils.service 2>/dev/null || true
 systemctl enable open-vm-tools.service 2>/dev/null || true
 
-# ─── SDDM autologin (no password — boot straight to desktop) ───
-echo "==> [NovatOS] Configuring SDDM auto-login..."
-mkdir -p /etc/sddm.conf.d
+# ═══════════════════════════════════════════════════════════════════════
+# CRITICAL: Remove ALL session files except NovatOS
+# This ensures SDDM shows ONLY NovatOS Desktop (no Plasma, Weston, etc.)
+# ═══════════════════════════════════════════════════════════════════════
+rm -f /usr/share/xsessions/*.desktop 2>/dev/null || true
+rm -f /usr/share/wayland-sessions/*.desktop 2>/dev/null || true
 
-# Remove ALL other session files so only NovatOS appears
-rm -f /usr/share/xsessions/*.desktop 2>/dev/null
-rm -f /usr/share/wayland-sessions/*.desktop 2>/dev/null
-
-# Create NovatOS session file FIRST
+# ═══════════════════════════════════════════════════════════════════════
+# CRITICAL: Create the NovatOS session file
+# Uses XFCE as the desktop engine (proven, reliable, no launch issues)
+# ═══════════════════════════════════════════════════════════════════════
 mkdir -p /usr/share/xsessions
-cat > /usr/share/xsessions/novatos.desktop <<'EOF'
+cat > /usr/share/xsessions/novatos.desktop <<'SESSIONEOF'
 [Desktop Entry]
 Name=NovatOS Desktop
-Comment=NovatOS custom desktop
-Exec=/usr/local/bin/novatos-desktop
+Comment=NovatOS Desktop Environment
+Exec=startxfce4
 Type=Application
 DesktopNames=NovatOS
-EOF
+SESSIONEOF
 
-# Make sure the desktop script is executable
-chmod +x /usr/local/bin/novatos-desktop 2>/dev/null || true
-chmod +x /usr/local/bin/novatos-menu 2>/dev/null || true
-chmod +x /usr/local/bin/novatos-lock 2>/dev/null || true
+# ═══════════════════════════════════════════════════════════════════════
+# CRITICAL: Create the desktop launcher script
+# This is created IN THE HOOK (not via includes.chroot) to guarantee
+# it exists and is executable.
+# ═══════════════════════════════════════════════════════════════════════
+mkdir -p /usr/local/bin
+cat > /usr/local/bin/novatos-desktop <<'SCRIPTEOF'
+#!/bin/bash
+# NovatOS Desktop launcher — starts XFCE session
+# XFCE is the desktop engine; themed with NovatOS dark colors.
 
-# SDDM autologin config
-cat > /etc/sddm.conf.d/autologin.conf <<'EOF'
-[Autologin]
-User=novatos
-Session=novatos
-EOF
+export XDG_CURRENT_DESKTOP=NovatOS
+export XDG_SESSION_TYPE=x11
+export DESKTOP_SESSION=novatos
 
-# SDDM main config (no theme = use default, no session picker)
-cat > /etc/sddm.conf.d/00-novatos.conf <<'EOF'
+# Load GPU driver based on hardware
+if ! grep -q nomodeset /proc/cmdline 2>/dev/null; then
+    gpu=$(lspci -nn 2>/dev/null | grep -i 'vga\|3d\|display' | head -1)
+    if echo "$gpu" | grep -qi 'amd\|ati\|radeon'; then
+        modprobe amdgpu 2>/dev/null || modprobe radeon 2>/dev/null || true
+    elif echo "$gpu" | grep -qi 'nvidia'; then
+        modprobe nvidia 2>/dev/null || modprobe nouveau 2>/dev/null || true
+    elif echo "$gpu" | grep -qi 'intel'; then
+        modprobe i915 2>/dev/null || true
+    fi
+fi
+
+export GTK_THEME=Adwaita:dark
+export QT_QPA_PLATFORMTHEME=qt5ct
+
+# Start XFCE (the proven desktop engine)
+exec startxfce4
+SCRIPTEOF
+chmod 755 /usr/local/bin/novatos-desktop
+
+# ═══════════════════════════════════════════════════════════════════════
+# Create the installer script
+# ═══════════════════════════════════════════════════════════════════════
+cat > /usr/local/bin/novatos-installer <<'INSTEOF'
+#!/bin/bash
+# NovatOS Installer — launches the graphical installer
+if [ "$(id -u)" -ne 0 ]; then
+    exec sudo -E "$0" "$@"
+fi
+
+# Check if we have a display
+if [ -z "$DISPLAY" ] && [ -z "$WAYLAND_DISPLAY" ]; then
+    # TTY mode — run text-based installer
+    clear
+    echo ""
+    echo "  ================================"
+    echo "    NovatOS Installer (TTY Mode)"
+    echo "  ================================"
+    echo ""
+    echo "  Launching Debian installer..."
+    echo ""
+    exec debian-installer-launcher 2>/dev/null || exec bash -c "echo 'Use: apt install / dpkg-reconfigure' && bash"
+fi
+
+# GUI mode — try to launch the Python installer
+if command -v python3 >/dev/null 2>&1; then
+    exec python3 /usr/local/bin/novatos_installer.py
+fi
+
+# Fallback
+exec xterm -e bash -c "echo 'Installer not available. Use: sudo apt install novatos-installer' && bash"
+INSTEOF
+chmod 755 /usr/local/bin/novatos-installer
+
+# ═══════════════════════════════════════════════════════════════════════
+# Copy the Python installer if it exists in the chroot
+# (it was copied via includes.chroot, but we verify here)
+# ═══════════════════════════════════════════════════════════════════════
+if [ -f /usr/local/bin/novatos_installer.py ]; then
+    chmod 755 /usr/local/bin/novatos_installer.py
+fi
+
+# ═══════════════════════════════════════════════════════════════════════
+# SDDM configuration — auto-login, no password, only NovatOS session
+# ═══════════════════════════════════════════════════════════════════════
+mkdir -p /etc/sddm.conf.d
+
+cat > /etc/sddm.conf.d/00-novatos.conf <<'SDMEOF'
 [Autologin]
 User=novatos
 Session=novatos
@@ -102,43 +171,191 @@ RememberLastSession=true
 EnableHiDPI=true
 ServerArguments=-nolisten tcp
 SessionDir=/usr/share/xsessions
-EOF
+SDMEOF
 
-# ─── PAM: allow passwordless login for novatos ───
-cat > /etc/pam.d/sddm-autologin <<'EOF'
+# PAM: allow passwordless login for novatos
+cat > /etc/pam.d/sddm-autologin <<'PAMEOF'
 auth       sufficient   pam_succeed_if.so user = novatos
 auth       required     pam_permit.so
 account    include      sddm
 password   include      sddm
 session    include      sddm
-EOF
+PAMEOF
 
-# ─── Polkit: allow wheel/sudo group without password ───
+# ═══════════════════════════════════════════════════════════════════════
+# XFCE configuration — NovatOS dark theme, Windows 11-style panel
+# ═══════════════════════════════════════════════════════════════════════
+NOVATOS_HOME="/home/novatos"
+mkdir -p "$NOVATOS_HOME/.config/xfce4/panel"
+mkdir -p "$NOVATOS_HOME/.config/xfce4/xfconf/xfce-perchannel-xml"
+mkdir -p "$NOVATOS_HOME/.config/xfce4/helpers.rc"
+mkdir -p "$NOVATOS_HOME/Desktop"
+
+# XFCE general settings
+cat > "$NOVATOS_HOME/.config/xfce4/xfconf/xfce-perchannel-xml/xsettings.xml" <<'XFCEEOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<channel name="xsettings" version="1.0">
+  <property name="Gtk" type="empty">
+    <property name="FontName" type="string" value="Noto Sans 10"/>
+    <property name="ThemeName" type="string" value="Adwaita-dark"/>
+    <property name="IconThemeName" type="string" value="Papirus"/>
+    <property name="CursorThemeName" type="string" value="default"/>
+  </property>
+</channel>
+XFCEEOF
+
+# XFCE panel — Windows 11-style bottom panel
+cat > "$NOVATOS_HOME/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-panel.xml" <<'PANELEOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<channel name="xfce4-panel" version="1.0">
+  <property name="panels" type="uint" value="1">
+    <property name="panel-0" type="empty">
+      <property name="position" type="string" value="p=6;x=0;y=0"/>
+      <property name="length" type="uint" value="100"/>
+      <property name="size" type="uint" value="44"/>
+      <property name="background-style" type="uint" value="0"/>
+      <property name="background-alpha" type="uint" value="90"/>
+      <property name="dark-mode" type="bool" value="true"/>
+      <property name="plugin-ids" type="uint" value="6">
+        <value type="uint" value="1"/>
+        <value type="uint" value="2"/>
+        <value type="uint" value="3"/>
+        <value type="uint" value="4"/>
+        <value type="uint" value="5"/>
+        <value type="uint" value="6"/>
+      </property>
+    </property>
+  </property>
+  <property name="plugins" type="empty">
+    <property name="plugin-1" type="string" value="whiskermenu"/>
+    <property name="plugin-2" type="string" value="tasklist"/>
+    <property name="plugin-3" type="string" value="separator">
+      <property name="expand" type="bool" value="true"/>
+      <property name="style" type="uint" value="0"/>
+    </property>
+    <property name="plugin-4" type="string" value="pulseaudio"/>
+    <property name="plugin-5" type="string" value="clock"/>
+    <property name="plugin-6" type="string" value="actions"/>
+  </property>
+</channel>
+PANELEOF
+
+# XFCE session — auto-start services
+mkdir -p "$NOVATOS_HOME/.config/autostart"
+cat > "$NOVATOS_HOME/.config/autostart/novatos-setup.desktop" <<'AUTOEOF'
+[Desktop Entry]
+Name=NovatOS Setup
+Exec=/usr/local/bin/novatos-autostart
+Terminal=false
+Type=Application
+AUTOEOF
+
+# Auto-start script
+cat > /usr/local/bin/novatos-autostart <<'AUTOEOF'
+#!/bin/bash
+# NovatOS auto-start — launches system tray apps on login
+nm-applet &
+blueman-applet &
+pasystray 2>/dev/null &
+/usr/lib/policykit-1-gnome/polkit-gnome-authentication-agent-1 &
+AUTOEOF
+chmod 755 /usr/local/bin/novatos-autostart
+
+# XFCE desktop background
+cat > "$NOVATOS_HOME/.config/xfce4/xfconf/xfce-perchannel-xml/xfdesktop.xml" <<'DeskEOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<channel name="xfdesktop" version="1.0">
+  <property name="backdrop" type="empty">
+    <property name="screen0" type="empty">
+      <property name="monitor0" type="empty">
+        <property name="image-path" type="string" value="/usr/share/novatos/wallpapers/aurora.png"/>
+        <property name="image-style" type="int" value="5"/>
+        <property name="color-style" type="int" value="0"/>
+      </property>
+    </property>
+  </property>
+</channel>
+DeskEOF
+
+# ═══════════════════════════════════════════════════════════════════════
+# Install NovatOS wallpaper (create a simple gradient if we don't have one)
+# ═══════════════════════════════════════════════════════════════════════
+mkdir -p /usr/share/novatos/wallpapers
+if [ ! -f /usr/share/novatos/wallpapers/aurora.png ]; then
+    # Create a simple dark gradient wallpaper using ImageMagick
+    if command -v convert >/dev/null 2>&1; then
+        convert -size 1920x1080 gradient:'#0A0C12'-'#0F1117' \
+            -gravity center -fill '#4CC2FF' -font Noto-Sans-Bold -pointsize 72 \
+            -annotate +0-50 'NovatOS' \
+            -fill '#9DB7E0' -font Noto-Sans -pointsize 24 \
+            -annotate +0+30 'Aurora Edition 2026' \
+            /usr/share/novatos/wallpapers/aurora.png 2>/dev/null || true
+    fi
+fi
+
+# ═══════════════════════════════════════════════════════════════════════
+# Desktop shortcut: Install NovatOS
+# ═══════════════════════════════════════════════════════════════════════
+cat > "$NOVATOS_HOME/Desktop/install-novatos.desktop" <<'INSTDESK'
+[Desktop Entry]
+Name=Install NovatOS
+Comment=Permanently install NovatOS to your hard drive
+Exec=sudo novatos-installer
+Icon=system-installer
+Terminal=false
+Type=Application
+Categories=System;
+INSTDESK
+chmod 755 "$NOVATOS_HOME/Desktop/install-novatos.desktop"
+
+# ═══════════════════════════════════════════════════════════════════════
+# Desktop shortcut: App Store (GNOME Software)
+# ═══════════════════════════════════════════════════════════════════════
+cat > "$NOVATOS_HOME/Desktop/app-store.desktop" <<'APPSDESK'
+[Desktop Entry]
+Name=App Store
+Comment=Install applications from Flatpak and Debian repos
+Exec=gnome-software
+Icon=system-software-install
+Terminal=false
+Type=Application
+Categories=System;
+APPSDESK
+chmod 755 "$NOVATOS_HOME/Desktop/app-store.desktop"
+
+# ═══════════════════════════════════════════════════════════════════════
+# Set ownership for all novatos home files
+# ═══════════════════════════════════════════════════════════════════════
+chown -R novatos:novatos "$NOVATOS_HOME"
+
+# ═══════════════════════════════════════════════════════════════════════
+# Polkit: allow sudo group without password
+# ═══════════════════════════════════════════════════════════════════════
 mkdir -p /etc/polkit-1/rules.d
-cat > /etc/polkit-1/rules.d/10-novatos.rules <<'EOF'
+cat > /etc/polkit-1/rules.d/10-novatos.rules <<'POLKEOF'
 polkit.addRule(function(action, subject) {
     if (subject.isInGroup("sudo")) {
         return polkit.Result.YES;
     }
 });
-EOF
+POLKEOF
 
-# ─── NetworkManager config ───
+# ═══════════════════════════════════════════════════════════════════════
+# NetworkManager config
+# ═══════════════════════════════════════════════════════════════════════
 mkdir -p /etc/NetworkManager/conf.d
-cat > /etc/NetworkManager/conf.d/10-novatos.conf <<'EOF'
+cat > /etc/NetworkManager/conf.d/10-novatos.conf <<'NMEOF'
 [main]
 plugins=keyfile
 dns=systemd-resolved
 rc-manager=unmanaged
+NMEOF
 
-[connectivity]
-uri=https://www.debian.org/check_network_status.txt
-interval=300
-EOF
-
-# ─── GRUB config (for installed system) ───
+# ═══════════════════════════════════════════════════════════════════════
+# GRUB config
+# ═══════════════════════════════════════════════════════════════════════
 mkdir -p /etc/default
-cat > /etc/default/grub <<'EOF'
+cat > /etc/default/grub <<'GRUBEOF'
 GRUB_DEFAULT=0
 GRUB_TIMEOUT=5
 GRUB_DISTRIBUTOR="NovatOS"
@@ -146,36 +363,44 @@ GRUB_CMDLINE_LINUX_DEFAULT="quiet splash loglevel=3"
 GRUB_CMDLINE_LINUX=""
 GRUB_DISABLE_OS_PROBER=false
 GRUB_DISABLE_SUBMENU=y
-GRUB_BACKGROUND="/usr/share/novatos/wallpapers/grub-background.png"
-GRUB_THEME="/usr/share/novatos/themes/grub-theme/theme.txt"
 GRUB_GFXMODE=1920x1080,1280x1024,1024x768,auto
 GRUB_GFXPAYLOAD_LINUX=keep
 GRUB_FONT="/usr/share/grub/unicode.pf2"
 GRUB_DISABLE_RECOVERY=true
-EOF
+GRUBEOF
 
-# ─── Make scripts executable ───
-chmod +x /usr/local/bin/novatos-* 2>/dev/null || true
-chmod +x /usr/lib/novatos/* 2>/dev/null || true
-
-# ─── Disable unnecessary services (save RAM) ───
+# ═══════════════════════════════════════════════════════════════════════
+# Disable unnecessary services (save RAM)
+# ═══════════════════════════════════════════════════════════════════════
 systemctl disable ModemManager.service 2>/dev/null || true
 systemctl disable rpcbind.service 2>/dev/null || true
 systemctl disable nfs-common.service 2>/dev/null || true
 
-# ─── Clean up ───
+# ═══════════════════════════════════════════════════════════════════════
+# Clean up
+# ═══════════════════════════════════════════════════════════════════════
 rm -f /var/cache/apt/archives/*.deb 2>/dev/null || true
-rm -f /var/lib/apt/lists/* 2>/dev/null || true
 apt-get clean 2>/dev/null || true
 
-# ─── Create NovatOS release info ───
-cat > /etc/novatos-release <<'EOF'
+# ═══════════════════════════════════════════════════════════════════════
+# Verify critical files exist and are executable
+# ═══════════════════════════════════════════════════════════════════════
+echo "==> [NovatOS] Verifying critical files..."
+ls -la /usr/local/bin/novatos-desktop
+ls -la /usr/local/bin/novatos-installer
+ls -la /usr/local/bin/novatos-autostart
+ls -la /usr/share/xsessions/novatos.desktop
+echo "==> [NovatOS] All critical files verified."
+
+# ═══════════════════════════════════════════════════════════════════════
+# Create NovatOS release info
+# ═══════════════════════════════════════════════════════════════════════
+cat > /etc/novatos-release <<'RELEOF'
 NovatOS 2026 "Aurora" (Debian 12 Bookworm)
-Desktop: NovatOS Custom (Wayland/X11)
-Installer: NovatOS Installer (graphical)
-App Store: GNOME Software + Flatpak
+Desktop: XFCE (NovatOS themed)
+Installer: NovatOS Installer
 Homepage: https://github.com/salom600/NovatOS
-EOF
+RELEOF
 ln -sf /etc/novatos-release /etc/os-release
 
 echo "==> [NovatOS] Post-install customization done."
