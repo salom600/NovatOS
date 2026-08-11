@@ -51,10 +51,19 @@ jobs:
         id: build
         run: |
           cd build
-          lb config --distribution bookworm --architecture amd64 \
-            --binary-images iso-hybrid --chroot-filesystem squashfs \
-            --compression xz --bootloaders grub-pc,grub-efi-amd64 \
-            --debian-installer none --interactive false
+          # Configure live-build (Debian 12 Bookworm)
+          lb config \
+            --distribution bookworm \
+            --architecture amd64 \
+            --archive-areas "main contrib non-free-firmware non-free" \
+            --binary-images iso-hybrid \
+            --chroot-filesystem squashfs \
+            --compression xz \
+            --debian-installer none \
+            --interactive false \
+            --mirror-bootstrap "http://deb.debian.org/debian/" \
+            --mirror-binary "http://deb.debian.org/debian/" \
+            --bootappend-live "boot=live components nomodeset quiet splash"
 
           echo "::group::live-build output"
           sudo lb build 2>&1 | tee build.log
@@ -65,6 +74,7 @@ jobs:
           if [ -z "$ISO_FILE" ]; then
             echo "::error::No ISO produced"
             ls -la
+            cat build.log | tail -50
             exit 1
           fi
 
