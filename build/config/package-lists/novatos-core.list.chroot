@@ -165,6 +165,20 @@ xserver-xorg-input-all
 xwayland
 weston
 
+# ─── Desktop stack: openbox + tint2 + nitrogen (reliable, lightweight) ───
+openbox
+tint2
+nitrogen
+pcmanfm
+xfce4-terminal
+xfconf
+lxappearance
+obconf
+dmenu
+i3lock
+scrot
+imagemagick
+
 # ─── Fonts ───
 fonts-noto-core
 fonts-noto-extra

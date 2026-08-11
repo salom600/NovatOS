@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- NovatOS Openbox configuration -->
+<openbox_config xmlns="http://openbox.org/3.4/rc">
+
+  <!-- ─── Resistance ─── -->
+  <resistance>
+    <strength>10</strength>
+    <screen_edge_strength>20</screen_edge_strength>
+  </resistance>
+
+  <!-- ─── Focus ─── -->
+  <focus>
+    <focusNew>yes</focusNew>
+    <followMouse>no</followMouse>
+    <focusLast>yes</focusLast>
+    <underMouse>no</underMouse>
+    <focusDelay>200</focusDelay>
+    <raiseOnFocus>no</raiseOnFocus>
+  </focus>
+
+  <!-- ─── Theme ─── -->
+  <theme>
+    <name>NovatOS-Dark</name>
+    <titleLayout>NLIMC</titleLayout>
+    <keepBorder>yes</keepBorder>
+    <animateIconify>yes</animateIconify>
+    <font place="ActiveWindow">
+      <name>Noto Sans</name>
+      <size>10</size>
+      <weight>Bold</weight>
+      <slant>Normal</slant>
+    </font>
+    <font place="InactiveWindow">
+      <name>Noto Sans</name>
+      <size>10</size>
+      <weight>Normal</weight>
+      <slant>Normal</slant>
+    </font>
+    <font place="MenuHeader">
+      <name>Noto Sans</name>
+      <size>10</size>
+    </font>
+    <font place="MenuItem">
+      <name>Noto Sans</name>
+      <size>10</size>
+    </font>
+  </theme>
+
+  <!-- ─── Desktops ─── -->
+  <desktops>
+    <number>2</number>
+    <firstdesk>1</firstdesk>
+    <names>
+      <name>Desktop 1</name>
+      <name>Desktop 2</name>
+    </names>
+    <popupTime>875</popupTime>
+  </desktops>
+
+  <!-- ─── Keyboard ─── -->
+  <keyboard>
+    <!-- Super key opens Start menu -->
+    <keybind key="Super_L">
+      <action name="Execute"><command>novatos-menu</command></action>
+    </keybind>
+    <keybind key="Super_R">
+      <action name="Execute"><command>novatos-menu</command></action>
+    </keybind>
+
+    <!-- Terminal -->
+    <keybind key="C-A-t">
+      <action name="Execute"><command>xfce4-terminal</command></action>
+    </keybind>
+
+    <!-- File manager -->
+    <keybind key="W-e">
+      <action name="Execute"><command>pcmanfm</command></action>
+    </keybind>
+
+    <!-- Close window -->
+    <keybind key="A-F4">
+      <action name="Close"/>
+    </keybind>
+
+    <!-- Switch desktops -->
+    <keybind key="C-A-Left">
+      <action name="DesktopLeft"/>
+    </keybind>
+    <keybind key="C-A-Right">
+      <action name="DesktopRight"/>
+    </keybind>
+
+    <!-- Toggle fullscreen -->
+    <keybind key="W-f">
+      <action name="ToggleFullscreen"/>
+    </keybind>
+
+    <!-- Lock screen -->
+    <keybind key="W-l">
+      <action name="Execute"><command>novatos-lock</command></action>
+    </keybind>
+  </keyboard>
+
+  <!-- ─── Mouse ─── -->
+  <mouse>
+    <dragThreshold>8</dragThreshold>
+    <doubleClickTime>400</doubleClickTime>
+    <screenEdgeWarpTime>400</screenEdgeWarpTime>
+    <context name="Frame">
+      <mousebind button="A-Left" action="Press">
+        <action name="Focus"/>
+        <action name="Raise"/>
+      </mousebind>
+      <mousebind button="A-Left" action="Drag">
+        <action name="Move"/>
+      </mousebind>
+      <mousebind button="A-Right" action="Press">
+        <action name="Focus"/>
+        <action name="Raise"/>
+      </mousebind>
+      <mousebind button="A-Right" action="Drag">
+        <action name="Resize"/>
+      </mousebind>
+    </context>
+  </mouse>
+
+  <!-- ─── Menu ─── -->
+  <menu>
+    <file>menu.xml</file>
+    <warpPointer>yes</warpPointer>
+  </menu>
+
+  <!-- ─── Applications ─── -->
+  <applications>
+    <application class="*">
+      <focus>yes</focus>
+    </application>
+  </applications>
+
+</openbox_config>

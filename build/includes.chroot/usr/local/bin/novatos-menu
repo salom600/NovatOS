@@ -1,0 +1,25 @@
+#!/bin/bash
+## NovatOS Start Menu — app launcher using dmenu
+## Lists all .desktop applications and launches the selected one.
+
+# Build list of applications from .desktop files
+apps=$(find /usr/share/applications /usr/local/share/applications ~/.local/share/applications -name '*.desktop' 2>/dev/null | while read f; do
+    name=$(grep -m1 '^Name=' "$f" | cut -d= -f2)
+    nodisp=$(grep -m1 '^NoDisplay=' "$f" | cut -d= -f2)
+    [ "$nodisp" = "true" ] && continue
+    [ -z "$name" ] && continue
+    exec=$(grep -m1 '^Exec=' "$f" | cut -d= -f2 | sed 's/ %.*//')
+    echo "$name|$exec"
+done | sort -u)
+
+# Show dmenu and get selection
+selection=$(echo "$apps" | cut -d'|' -f1 | dmenu -i -fn 'Noto Sans-12' \
+    -nb '#0F1117' -nf '#FFFFFF' \
+    -sb '#4CC2FF' -sf '#0F1117' \
+    -p 'Search applications...' -l 10 2>/dev/null)
+
+[ -z "$selection" ] && exit 0
+
+# Find and launch the selected app
+exec_cmd=$(echo "$apps" | grep "^$selection|" | cut -d'|' -f2)
+[ -n "$exec_cmd" ] && $exec_cmd &

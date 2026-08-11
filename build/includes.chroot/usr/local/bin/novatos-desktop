@@ -1,41 +1,93 @@
 #!/bin/bash
-## NovatOS Desktop launcher with GPU fallback
-## Detects if GPU acceleration is available; falls back to software rendering.
+## NovatOS Desktop session — openbox + tint2 + nitrogen
+## Reliable, lightweight (~100-150MB RAM), works on ANY GPU.
+##
+## This replaces the fragile custom Qt6 compositor with a proven stack:
+##   - openbox: X11 window manager (rock solid, 2MB)
+##   - tint2: taskbar/panel (Windows 11-style, configurable)
+##   - nitrogen: wallpaper setter
+##   - pcmanfm: desktop icons + file manager
 
-set -e
+export XDG_CURRENT_DESKTOP=NovatOS
+export XDG_SESSION_TYPE=x11
+export DESKTOP_SESSION=novatos
 
-# Check if nomodeset is in kernel params
-USE_SOFTWARE=0
-if grep -q nomodeset /proc/cmdline 2>/dev/null; then
-    USE_SOFTWARE=1
-fi
+# ─── GPU driver initialization ───
+# Try to load the appropriate GPU driver based on hardware
+# This ensures GPU acceleration works (not just software rendering)
+load_gpu_driver() {
+    # Check if nomodeset is in kernel params (user chose Safe Mode)
+    if grep -q nomodeset /proc/cmdline 2>/dev/null; then
+        echo "[NovatOS] nomodeset detected — using software rendering" >&2
+        return
+    fi
 
-# Check if no GPU driver is loaded
-if ! lsmod 2>/dev/null | grep -qE 'amdgpu|radeon|i915|nouveau|nvidia|vmwgfx|virtio_gpu'; then
-    USE_SOFTWARE=1
-fi
+    # Detect GPU vendor and load appropriate driver
+    local gpu=$(lspci -nn 2>/dev/null | grep -i 'vga\|3d\|display' | head -1)
 
-# Check if we're in a VM (VMs often need software rendering for Qt)
-if systemd-detect-virt 2>/dev/null | grep -qE 'oracle|vmware|qemu|kvm|none'; then
-    # In VM — use GPU if available, but prepare for fallback
-    :
-fi
+    if echo "$gpu" | grep -qi 'amd\|ati\|radeon'; then
+        echo "[NovatOS] AMD GPU detected — loading amdgpu/radeon driver" >&2
+        modprobe amdgpu 2>/dev/null || modprobe radeon 2>/dev/null || true
+    elif echo "$gpu" | grep -qi 'nvidia'; then
+        echo "[NovatOS] NVIDIA GPU detected — loading nvidia driver" >&2
+        modprobe nvidia 2>/dev/null || modprobe nouveau 2>/dev/null || true
+    elif echo "$gpu" | grep -qi 'intel'; then
+        echo "[NovatOS] Intel GPU detected — loading i915 driver" >&2
+        modprobe i915 2>/dev/null || true
+    fi
 
-# Set environment variables
-if [ "$USE_SOFTWARE" = "1" ]; then
-    echo "[NovatOS] Using software rendering (compatibility mode)" >&2
-    export QT_QUICK_BACKEND=software
-    export LIBGL_ALWAYS_SOFTWARE=1
-    export WLR_NO_HARDWARE_CURSORS=1
-else
-    echo "[NovatOS] Using GPU acceleration" >&2
-    export WLR_NO_HARDWARE_CURSORS=1
-fi
+    # VM GPU drivers
+    local virt=$(systemd-detect-virt 2>/dev/null || echo "none")
+    case "$virt" in
+        oracle)  modprobe vboxguest 2>/dev/null || true ;;
+        vmware)  modprobe vmwgfx 2>/dev/null || true ;;
+        qemu*|kvm) modprobe virtio_gpu 2>/dev/null || true ;;
+    esac
+}
 
-# Common Qt settings
+load_gpu_driver
+
+# ─── Set up environment ───
+export GTK_THEME=Adwaita:dark
 export QT_QPA_PLATFORMTHEME=qt5ct
 export QT_AUTO_SCREEN_SCALE_FACTOR=1
-export QT_SCALE_FACTOR=1
 
-# Launch NovatOS Desktop
-exec /usr/local/bin/novatos-desktop "$@"
+# ─── Start desktop components ───
+
+# 1. Start openbox (window manager)
+openbox &
+
+# 2. Set wallpaper with nitrogen
+nitrogen --restore 2>/dev/null &
+# If no nitrogen config exists yet, set the default wallpaper
+if [ ! -f ~/.config/nitrogen/bg-saved.cfg ]; then
+    mkdir -p ~/.config/nitrogen
+    nitrogen --set-scaled /usr/share/novatos/wallpapers/aurora.png 2>/dev/null &
+fi
+
+# 3. Start tint2 (taskbar — Windows 11-style)
+tint2 &
+
+# 4. Start pcmanfm in desktop mode (icons + wallpaper management)
+pcmanfm --desktop 2>/dev/null &
+
+# 5. Start network applet
+nm-applet &
+
+# 6. Start volume applet
+pasystray 2>/dev/null &
+
+# 7. Start bluetooth applet
+blueman-applet 2>/dev/null &
+
+# 8. Start polkit authentication agent
+/usr/lib/policykit-1-gnome/polkit-gnome-authentication-agent-1 &
+
+# 9. Start power manager
+xfce4-power-manager 2>/dev/null &
+
+# 10. Start notification daemon
+dunst 2>/dev/null || notification-daemon 2>/dev/null &
+
+# ─── Wait for openbox to exit (session ends when WM closes) ───
+wait $!

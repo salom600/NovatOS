@@ -1,0 +1,125 @@
+# NovatOS tint2 config — Windows 11-style taskbar
+# Dark background, cyan accents, bottom position
+
+# ─── General ───
+rounded = 0
+border_width = 1
+background_color = #0F1117 92
+border_color = #4CC2FF 20
+
+# ─── Panel ───
+panel_items = LTSBC
+panel_size = 100% 48
+panel_margin = 0 0
+panel_padding = 4 0 4
+panel_position = bottom center horizontal
+panel_layer = top
+panel_background_id = 1
+wm_menu = 1
+panel_dock = 0
+panel_pager_strip = 0
+panel_window_title = 0
+
+# ─── Taskbar ───
+taskbar_mode = multi_desktop
+taskbar_padding = 2 0 4
+taskbar_background_id = 0
+taskbar_active_background_id = 0
+
+# ─── Tasks ───
+task_icon = 1
+task_text = 0
+task_width = 40
+task_centered = 1
+task_padding = 4 4
+task_background_id = 0
+task_active_background_id = 2
+task_urgent_background_id = 3
+task_iconified_background_id = 0
+
+# ─── Task icons ───
+task_left_click_action = 1
+task_middle_click_action = 2
+task_right_click_action = 3
+
+# ─── System tray ───
+systray_padding = 4 2 2
+systray_background_id = 0
+
+# ─── Clock ───
+time1_format = %H:%M
+time1_font = Noto Sans 10
+time2_format = %a %d %b
+time2_font = Noto Sans 8
+clock_font_color = #FFFFFF 100
+clock_padding = 6 0
+clock_background_id = 4
+clock_tooltip = %A, %B %d, %Y
+clock_lclick_command = zenity --calendar --text "" --title="Calendar" 2>/dev/null
+clock_rclick_command = zenity --calendar --text "" --title="Calendar" 2>/dev/null
+
+# ─── Launcher (Start button) ───
+launcher_padding = 4 2
+launcher_background_id = 5
+launcher_icon_basedirectory = /usr/share/icons/
+launcher_item_app = /usr/share/applications/novatos-menu.desktop
+launcher_tooltip = NovatOS Start Menu
+
+# ─── Tooltips ───
+tooltip = 1
+tooltip_padding = 4 4
+tooltip_show_timeout = 0.3
+tooltip_hide_timeout = 0.3
+tooltip_background_id = 6
+tooltip_font_color = #FFFFFF 100
+tooltip_font = Noto Sans 10
+
+# ─── Battery ───
+battery = 1
+battery_low_status = 15
+battery_low_cmd = notify-send "Battery Low" "Connect your charger"
+battery_hide = 98
+battery_font = Noto Sans 9
+battery_padding = 4 0
+battery_background_id = 0
+battery_tooltip = 1
+
+# ─── Backgrounds ───
+# ID 1: panel background (dark, semi-transparent)
+# ID 2: active task (cyan tint)
+# ID 3: urgent task (red tint)
+# ID 4: clock background (cyan tint)
+# ID 5: launcher/Start button (cyan tint)
+# ID 6: tooltip background (dark)
+rounded = 8
+border_width = 0
+
+background_id = 1
+background_color = #0F1117 92
+background_border_color = #4CC2FF 20
+
+background_id = 2
+background_color = #4CC2FF 20
+background_border_color = #4CC2FF 30
+
+background_id = 3
+background_color = #FF6B6B 30
+background_border_color = #FF6B6B 40
+
+background_id = 4
+background_color = #4CC2FF 10
+background_border_color = #4CC2FF 20
+
+background_id = 5
+background_color = #4CC2FF 15
+background_border_color = #4CC2FF 25
+
+background_id = 6
+background_color = #161922 95
+background_border_color = #2A2F3D 100
+
+# ─── Separator ───
+separator = 1
+separator_background_id = 0
+separator_color = #2A2F3D 50
+separator_size = 2

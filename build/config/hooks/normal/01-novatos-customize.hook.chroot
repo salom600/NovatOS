@@ -69,15 +69,14 @@ EOF
 cat > /etc/sddm.conf.d/theme.conf <<'EOF'
 [Theme]
 ThemeDir=/usr/share/sddm/themes
-Current=novatos
-
-[Wayland]
-EnableHiDPI=true
-CompositorCommand=weston --no-lockscreen
+Current=
 
 [X11]
 EnableHiDPI=true
 ServerArguments=-nolisten tcp
+DisplayCommand=/usr/share/sddm/scripts/Xsetup
+DisplayStopCommand=/usr/share/sddm/scripts/Xstop
+SessionDir=/usr/share/xsessions
 EOF
 
 # ─── PAM: allow passwordless login for novatos ───
@@ -99,41 +98,18 @@ polkit.addRule(function(action, subject) {
 });
 EOF
 
-# ─── Build NovatOS custom desktop (if source exists) ───
-if [ -d /usr/src/novatos-desktop ]; then
-    echo "==> [NovatOS] Building custom desktop..."
-    cd /usr/src/novatos-desktop
-    mkdir -p build && cd build
-    cmake .. -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=Release 2>&1 || true
-    make -j$(nproc) 2>&1 || true
-    make install 2>&1 || true
-    cd /
-    rm -rf /usr/src/novatos-desktop/build
-fi
-
 # ─── Install NovatOS desktop session file ───
-mkdir -p /usr/share/wayland-sessions /usr/share/xsessions
+mkdir -p /usr/share/xsessions
 
-# Wayland session
-cat > /usr/share/wayland-sessions/novatos.desktop <<'EOF'
+# X11 session (openbox + tint2 — reliable, works on any GPU)
+cat > /usr/share/xsessions/novatos.desktop <<'EOF'
 [Desktop Entry]
 Name=NovatOS Desktop
-Comment=NovatOS custom desktop (Wayland)
+Comment=NovatOS custom desktop (openbox + tint2)
 Exec=/usr/local/bin/novatos-desktop
 Type=Application
 DesktopNames=NovatOS
-Keywords=desktop;wayland;novatos
-EOF
-
-# X11 session (fallback for unsupported GPUs)
-cat > /usr/share/xsessions/novatos.desktop <<'EOF'
-[Desktop Entry]
-Name=NovatOS Desktop (X11)
-Comment=NovatOS custom desktop (X11 fallback)
-Exec=/usr/local/bin/novatos-desktop --x11
-Type=Application
-DesktopNames=NovatOS
-Keywords=desktop;x11;novatos
+Keywords=desktop;openbox;novatos
 EOF
 
 # ─── NetworkManager config ───

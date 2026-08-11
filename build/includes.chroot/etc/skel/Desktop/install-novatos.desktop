@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Install NovatOS
+Name[ar]=تثبيت NovatOS
+Comment=Permanently install NovatOS to your hard drive
+Comment[ar]=تثبيت NovatOS بشكل دائم على القرص الصلب
+Exec=sudo novatos-installer
+Icon=system-installer
+Terminal=false
+Type=Application
+Categories=System;
+StartupNotify=true

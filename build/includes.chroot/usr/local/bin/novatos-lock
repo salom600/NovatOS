@@ -1,0 +1,38 @@
+#!/bin/bash
+## NovatOS Lock Screen — uses i3lock with NovatOS branding
+
+# Take a screenshot and blur it for the lock background
+scrot /tmp/novatos-lock.png 2>/dev/null
+
+# Apply blur (if imagemagick is available)
+if command -v convert >/dev/null 2>&1; then
+    convert /tmp/novatos-lock.png -blur 0x8 /tmp/novatos-lock-blur.png 2>/dev/null
+    BG=/tmp/novatos-lock-blur.png
+else
+    BG=/usr/share/novatos/wallpapers/aurora.png
+fi
+
+# Lock the screen
+i3lock -i "$BG" \
+    --insidecolor=00000022 \
+    --ringcolor=4CC2FFff \
+    --linecolor=4CC2FFff \
+    --keyhlcolor=4CC2FFff \
+    --bshlcolor=FF6B6Bff \
+    --insidevercolor=4CC2FF22 \
+    --ringvercolor=4CC2FFff \
+    --insidewrongcolor=FF6B6B22 \
+    --ringwrongcolor=FF6B6Bff \
+    --textcolor=FFFFFFff \
+    --timecolor=FFFFFFff \
+    --datecolor=9DB7E0ff \
+    --time-font='Noto Sans' \
+    --date-font='Noto Sans' \
+    --timesize=48 \
+    --datesize=16 \
+    --datestr='%A, %B %d' \
+    --noinputtext='' \
+    2>/dev/null
+
+# Clean up
+rm -f /tmp/novatos-lock.png /tmp/novatos-lock-blur.png 2>/dev/null

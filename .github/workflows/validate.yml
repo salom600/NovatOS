@@ -21,18 +21,13 @@ jobs:
           for f in \
             build/config/package-lists/novatos-core.list.chroot \
             build/config/hooks/normal/01-novatos-customize.hook.chroot \
-            desktop/CMakeLists.txt \
-            desktop/src/main.cpp \
-            desktop/src/DesktopShell.cpp \
-            desktop/src/DesktopShell.h \
-            desktop/src/Taskbar.cpp \
-            desktop/src/Taskbar.h \
-            desktop/src/StartMenu.cpp \
-            desktop/src/StartMenu.h \
-            desktop/src/LockScreen.cpp \
-            desktop/src/LockScreen.h \
-            desktop/src/WindowManager.cpp \
-            desktop/src/WindowManager.h \
+            build/includes.chroot/usr/local/bin/novatos-desktop \
+            build/includes.chroot/usr/local/bin/novatos-menu \
+            build/includes.chroot/usr/local/bin/novatos-lock \
+            build/includes.chroot/etc/skel/.config/tint2/tint2rc \
+            build/includes.chroot/etc/skel/.config/openbox/rc.xml \
+            build/includes.chroot/etc/skel/.config/nitrogen/bg-saved.cfg \
+            build/includes.chroot/etc/skel/Desktop/install-novatos.desktop \
             installer/src/novatos_installer.py \
             burner/src/main.c \
             .github/workflows/build-iso.yml \
@@ -64,21 +59,27 @@ jobs:
           fi
           echo "Burner C braces balanced ($OPENS pairs)"
 
-      - name: Check C++ brace balance (desktop)
+      - name: Check C++ brace balance (desktop, if exists)
         run: |
-          for f in desktop/src/*.cpp desktop/src/*.h; do
-            OPENS=$(grep -o '{' "$f" | wc -l)
-            CLOSES=$(grep -o '}' "$f" | wc -l)
-            if [ "$OPENS" != "$CLOSES" ]; then
-              echo "::error::$f braces unbalanced ($OPENS open, $CLOSES close)"
-              exit 1
-            fi
-          done
-          echo "Desktop C++ braces balanced"
+          if [ -d desktop/src ]; then
+            for f in desktop/src/*.cpp desktop/src/*.h 2>/dev/null; do
+              [ -f "$f" ] || continue
+              OPENS=$(grep -o '{' "$f" | wc -l)
+              CLOSES=$(grep -o '}' "$f" | wc -l)
+              if [ "$OPENS" != "$CLOSES" ]; then
+                echo "::error::$f braces unbalanced ($OPENS open, $CLOSES close)"
+                exit 1
+              fi
+            done
+            echo "Desktop C++ braces balanced"
+          else
+            echo "Desktop source not present (using openbox — OK)"
+          fi
 
       - name: Check shell scripts
         run: |
-          for f in build/includes.chroot/usr/local/bin/novatos-desktop; do
+          for f in build/includes.chroot/usr/local/bin/novatos-*; do
+            [ -f "$f" ] || continue
             bash -n "$f" || {
               echo "::error::$f shell syntax error"
               exit 1

@@ -39,19 +39,15 @@ jobs:
             grub-pc-bin grub-efi-amd64-bin grub-efi-amd64-signed mtools \
             debian-archive-keyring ca-certificates wget git
 
-      - name: Copy NovatOS desktop source
+      - name: Copy NovatOS installer + scripts
         run: |
-          # Copy the desktop source into the chroot so it gets compiled during build
-          mkdir -p build/includes.chroot/usr/src/novatos-desktop
-          cp -r desktop/* build/includes.chroot/usr/src/novatos-desktop/
-
           # Copy the installer
           mkdir -p build/includes.chroot/usr/local/bin
           cp installer/src/novatos_installer.py build/includes.chroot/usr/local/bin/novatos-installer
           chmod +x build/includes.chroot/usr/local/bin/novatos-installer
 
-          # Copy the desktop launcher script
-          chmod +x build/includes.chroot/usr/local/bin/novatos-desktop
+          # Make all scripts executable
+          chmod +x build/includes.chroot/usr/local/bin/novatos-*
 
       - name: Build ISO
         id: build
@@ -72,7 +68,7 @@ jobs:
             --mirror-chroot "http://deb.debian.org/debian/" \
             --mirror-chroot-security "http://security.debian.org/debian-security/" \
             --mirror-binary-security "http://security.debian.org/debian-security/" \
-            --bootappend-live "boot=live components nomodeset quiet splash"
+            --bootappend-live "boot=live components quiet splash"
 
           echo "::group::live-build output"
           lb build 2>&1 | tee build.log
