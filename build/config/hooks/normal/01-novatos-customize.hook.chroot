@@ -1,21 +1,15 @@
 #!/bin/sh
-## NovatOS post-install customization hook
-## Creates a CUSTOM desktop (openbox + polybar + rofi + feh + compton)
-## NOT XFCE — our own unique stack, themed as "NovatOS Desktop"
-
+## NovatOS post-install hook — custom desktop (openbox + Python/GTK3 panel + LightDM)
 set -e
-
 echo "==> [NovatOS] Running post-install customization..."
 
-# ─── Hostname + hosts ───
+# ─── Hostname + locale ───
 echo "novatos" > /etc/hostname
 cat > /etc/hosts <<'EOF'
 127.0.0.1   localhost
 ::1         localhost
 127.0.1.1   novatos.localdomain   novatos
 EOF
-
-# ─── Locale ───
 echo "en_US.UTF-8 UTF-8" > /etc/locale.gen
 locale-gen
 echo "LANG=en_US.UTF-8" > /etc/default/locale
@@ -27,15 +21,13 @@ if ! id -u novatos >/dev/null 2>&1; then
     passwd -d novatos
     passwd -l root
 fi
-
-# ─── Sudo ───
 echo "novatos ALL=(ALL:ALL) NOPASSWD: ALL" > /etc/sudoers.d/10-novatos-live
 chmod 440 /etc/sudoers.d/10-novatos-live
 
 # ─── Services ───
+systemctl enable lightdm 2>/dev/null || true
 systemctl enable NetworkManager 2>/dev/null || true
 systemctl enable bluetooth 2>/dev/null || true
-systemctl enable sddm 2>/dev/null || true
 systemctl enable cups 2>/dev/null || true
 systemctl enable avahi-daemon 2>/dev/null || true
 systemctl enable systemd-timesyncd 2>/dev/null || true
@@ -43,35 +35,32 @@ systemctl enable systemd-resolved 2>/dev/null || true
 systemctl enable ufw 2>/dev/null || true
 systemctl enable tlp 2>/dev/null || true
 systemctl enable haveged 2>/dev/null || true
-systemctl enable qemu-guest-agent 2>/dev/null || true
 systemctl enable open-vm-tools 2>/dev/null || true
+# Disable SDDM if it was installed by a previous config
+systemctl disable sddm 2>/dev/null || true
 
 # ═══════════════════════════════════════════════════════════════
-# CRITICAL: Remove ALL session files, create ONLY NovatOS
+# Remove ALL session files, create ONLY NovatOS
 # ═══════════════════════════════════════════════════════════════
 rm -f /usr/share/xsessions/*.desktop 2>/dev/null || true
 rm -f /usr/share/wayland-sessions/*.desktop 2>/dev/null || true
-
 mkdir -p /usr/share/xsessions
+
 cat > /usr/share/xsessions/novatos.desktop <<'EOF'
 [Desktop Entry]
 Name=NovatOS Desktop
 Comment=NovatOS Custom Desktop Environment
-Exec=/usr/local/bin/novatos-desktop
+Exec=/usr/local/bin/novatos-session
 Type=Application
 DesktopNames=NovatOS
 EOF
 
 # ═══════════════════════════════════════════════════════════════
-# NOVATOS DESKTOP LAUNCHER SCRIPT
-# Starts: GPU driver → compton → feh → polybar → openbox
+# NOVATOS SESSION SCRIPT — starts openbox + panel + compositor
 # ═══════════════════════════════════════════════════════════════
-cat > /usr/local/bin/novatos-desktop <<'EOF'
+cat > /usr/local/bin/novatos-session <<'EOF'
 #!/bin/bash
-# NovatOS Desktop — custom lightweight desktop environment
-# Components: openbox + polybar + rofi + feh + compton + dunst
-# ~100-150MB RAM, works on ANY GPU
-
+# NovatOS Desktop session — openbox + Python/GTK3 panel + compton
 export XDG_CURRENT_DESKTOP=NovatOS
 export XDG_SESSION_TYPE=x11
 export DESKTOP_SESSION=novatos
@@ -86,7 +75,6 @@ if ! grep -q nomodeset /proc/cmdline 2>/dev/null; then
     elif echo "$gpu" | grep -qi 'intel'; then
         modprobe i915 2>/dev/null || true
     fi
-    # VM drivers
     virt=$(systemd-detect-virt 2>/dev/null || echo "none")
     case "$virt" in
         oracle) modprobe vboxguest 2>/dev/null || true ;;
@@ -95,7 +83,6 @@ if ! grep -q nomodeset /proc/cmdline 2>/dev/null; then
 fi
 
 export GTK_THEME=Adwaita:dark
-export QT_QPA_PLATFORMTHEME=qt5ct
 
 # ─── Start compositor (transparency + shadows) ───
 compton --config /etc/novatos/compton.conf &
@@ -106,250 +93,220 @@ feh --bg-scale /usr/share/novatos/wallpapers/aurora.png 2>/dev/null &
 # ─── Start notification daemon ───
 dunst -config /etc/novatos/dunstrc 2>/dev/null &
 
-# ─── Start polybar (taskbar) ───
-polybar -c /etc/novatos/polybar.ini main 2>/dev/null &
+# ─── Start NovatOS Panel (Python/GTK3 taskbar) ───
+python3 /usr/local/bin/novatos-panel.py &
 
 # ─── Start system tray apps ───
 nm-applet &
-blueman-applet 2>/dev/null &
 
-# ─── Start openbox (window manager — session ends when it exits) ───
+# ─── Start openbox (window manager) ───
 exec openbox --config-file /etc/novatos/openbox-rc.xml
 EOF
-chmod 755 /usr/local/bin/novatos-desktop
+chmod 755 /usr/local/bin/novatos-session
 
 # ═══════════════════════════════════════════════════════════════
-# POLYBAR CONFIG — Windows 11-style taskbar
+# NOVATOS PANEL (Python/GTK3) — the custom taskbar
+# ═══════════════════════════════════════════════════════════════
+# The panel Python script is copied via includes.chroot, but we also
+# create a fallback here to guarantee it exists.
+if [ ! -f /usr/local/bin/novatos-panel.py ]; then
+    cat > /usr/local/bin/novatos-panel.py <<'PANELEOF'
+#!/usr/bin/env python3
+import gi, subprocess, os, time, threading
+gi.require_version('Gtk', '3.0')
+gi.require_version('Gdk', '3.0')
+from gi.repository import Gtk, Gdk, GLib
+
+class Panel(Gtk.Window):
+    def __init__(self):
+        super().__init__(title="NovatOS Panel")
+        self.set_type_hint(Gdk.WindowTypeHint.DOCK)
+        self.set_decorated(False)
+        self.set_skip_taskbar_hint(True)
+        self.set_keep_above(True)
+        screen = Gdk.Screen.get_default()
+        mon = screen.get_monitor_geometry(0)
+        h = 44
+        self.move(0, mon.height - h)
+        self.set_size_request(mon.width, h)
+        self.set_name("panel")
+        css = b'#panel{background:rgba(15,17,23,0.92);border-top:1px solid rgba(76,194,255,0.2);}'
+        css += b'.btn{background:transparent;color:#9DB7E0;border:none;border-radius:6px;padding:6px 12px;font-size:12px;}'
+        css += b'.btn:hover{background:rgba(255,255,255,0.1);color:#FFF;}'
+        css += b'.start{background:rgba(76,194,255,0.1);color:#4CC2FF;border:none;border-radius:8px;padding:6px 16px;font-weight:bold;font-size:13px;}'
+        css += b'.start:hover{background:rgba(76,194,255,0.25);}'
+        css += b'.clk{background:rgba(76,194,255,0.1);color:#4CC2FF;border-radius:8px;padding:4px 12px;font-weight:600;font-size:13px;}'
+        css += b'.pw{color:#FF6B6B;background:transparent;border:none;border-radius:8px;padding:4px 12px;font-size:16px;}'
+        css += b'.pw:hover{background:rgba(255,107,107,0.2);}'
+        p = Gtk.CssProvider(); p.load_from_data(css)
+        Gtk.StyleContext.add_provider_for_screen(Gdk.Screen.get_default(), p, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        
+        hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+        hb.set_margin_start(8); hb.set_margin_end(8); hb.set_margin_top(2); hb.set_margin_bottom(2)
+        self.add(hb)
+        
+        s = Gtk.Button(label="  Start  "); s.set_name("start"); s.connect("clicked", lambda w: subprocess.Popen(["novatos-launcher"]))
+        hb.pack_start(s, False, False, 0)
+        hb.pack_start(Gtk.VSeparator(), False, False, 4)
+        
+        self.tb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=2)
+        hb.pack_start(self.tb, True, True, 0)
+        
+        v = Gtk.Button(label="♪"); v.set_name("btn"); v.connect("clicked", lambda w: subprocess.Popen(["pavucontrol"]))
+        hb.pack_start(v, False, False, 0)
+        
+        n = Gtk.Button(label="NET"); n.set_name("btn"); n.connect("clicked", lambda w: subprocess.Popen(["nm-connection-editor"]))
+        hb.pack_start(n, False, False, 0)
+        
+        self.clk = Gtk.Label(); self.clk.set_name("clk")
+        hb.pack_start(self.clk, False, False, 0)
+        
+        pw = Gtk.Button(label="⏻"); pw.set_name("pw"); pw.connect("clicked", self.on_pw)
+        hb.pack_start(pw, False, False, 0)
+        
+        GLib.timeout_add_seconds(1, self.upd_clk)
+        GLib.timeout_add_seconds(2, self.upd_win)
+        self.upd_clk()
+        self.show_all()
+    
+    def on_pw(self, w):
+        m = Gtk.Menu()
+        for label, cmd in [("Suspend", "suspend"), ("Restart", "reboot"), ("Shut Down", "poweroff")]:
+            mi = Gtk.MenuItem(label=label)
+            mi.connect("activate", lambda x, c=cmd: subprocess.Popen(["systemctl", c]))
+            m.append(mi)
+        m.show_all()
+        m.popup_at_widget(w, Gdk.Gravity.NORTH_EAST, Gdk.Gravity.SOUTH_EAST, None)
+    
+    def upd_clk(self):
+        self.clk.set_text(time.strftime("%H:%M"))
+        return True
+    
+    def upd_win(self):
+        for c in self.tb.get_children(): self.tb.remove(c)
+        try:
+            r = subprocess.run(["wmctrl", "-l"], capture_output=True, text=True, timeout=2)
+            for line in r.stdout.strip().split('\n'):
+                if line:
+                    parts = line.split(None, 3)
+                    if len(parts) >= 4:
+                        b = Gtk.Button(label=parts[3][:25]); b.set_name("btn")
+                        b.connect("clicked", lambda w, wid=parts[0]: subprocess.run(["wmctrl", "-i", "-a", wid]))
+                        self.tb.pack_start(b, False, False, 0)
+            self.tb.show_all()
+        except: pass
+        return True
+
+class Launcher(Gtk.Window):
+    def __init__(self):
+        super().__init__(title="NovatOS Launcher")
+        self.set_type_hint(Gdk.WindowTypeHint.POPUP_MENU)
+        self.set_decorated(False)
+        self.set_skip_taskbar_hint(True)
+        self.set_size_request(400, 480)
+        self.set_name("launcher")
+        
+        css = b'window{background:#161922;border:1px solid #4CC2FF44;border-radius:16px;}'
+        css += b'entry{background:#0F1117;border:2px solid #2A2F3D;border-radius:10px;padding:10px;color:#FFF;font-size:14px;}'
+        css += b'entry:focus{border-color:#4CC2FF;}'
+        css += b'list{background:transparent;}'
+        css += b'row{padding:8px 12px;border-radius:8px;color:#FFF;}'
+        css += b'row:selected{background:rgba(76,194,255,0.2);color:#4CC2FF;}'
+        p = Gtk.CssProvider(); p.load_from_data(css)
+        Gtk.StyleContext.add_provider_for_screen(Gdk.Screen.get_default(), p, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        
+        vb = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        vb.set_margin_top(16); vb.set_margin_bottom(16); vb.set_margin_start(16); vb.set_margin_end(16)
+        self.add(vb)
+        
+        self.search = Gtk.SearchEntry(); self.search.set_placeholder_text("Search applications...")
+        self.search.connect("changed", self.on_search)
+        self.search.connect("activate", self.on_activate)
+        vb.pack_start(self.search, False, False, 0)
+        
+        self.lb = Gtk.ListBox(); self.lb.set_selection_mode(Gtk.SelectionMode.SINGLE)
+        self.lb.connect("row-activated", self.on_row)
+        sc = Gtk.ScrolledWindow(); sc.add(self.lb); sc.set_min_content_height(350)
+        vb.pack_start(sc, True, True, 0)
+        
+        hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        for label, cmd in [("Terminal", "lxterminal"), ("Files", "pcmanfm")]:
+            b = Gtk.Button(label=label); b.connect("clicked", lambda w, c=cmd: self.launch(c))
+            hb.pack_start(b, False, False, 0)
+        hb.pack_end(Gtk.Label(), True, True, 0)
+        for label, cmd in [("Suspend", "suspend"), ("Restart", "reboot"), ("Off", "poweroff")]:
+            b = Gtk.Button(label=label); b.connect("clicked", lambda w, c=cmd: subprocess.Popen(["systemctl", c]))
+            hb.pack_start(b, False, False, 0)
+        vb.pack_start(hb, False, False, 0)
+        
+        self.apps = []
+        import glob
+        for d in ["/usr/share/applications", "/usr/local/share/applications", os.path.expanduser("~/.local/share/applications")]:
+            for f in glob.glob(os.path.join(d, "*.desktop")):
+                try:
+                    name = ""; exe = ""; nod = False
+                    with open(f) as fh:
+                        for line in fh:
+                            if line.startswith("Name=") and not name: name = line[5:].strip()
+                            elif line.startswith("Exec=") and not exe: exe = line[5:].strip().split()[0]
+                            elif line.startswith("NoDisplay=true"): nod = True; break
+                    if not nod and name and exe: self.apps.append((name, exe))
+                except: pass
+        self.apps.sort(key=lambda x: x[0].lower())
+        self.populate("")
+        
+        screen = Gdk.Screen.get_default()
+        mon = screen.get_monitor_geometry(0)
+        self.move(20, mon.height - 480 - 50)
+        self.search.grab_focus()
+        self.connect("focus-out-event", lambda w, e: self.close())
+        self.show_all()
+    
+    def populate(self, q):
+        for c in self.lb.get_children(): self.lb.remove(c)
+        ql = q.lower()
+        for name, exe in self.apps:
+            if not q or ql in name.lower():
+                row = Gtk.ListBoxRow(); row.exe = exe
+                row.add(Gtk.Label(label=name, xalign=0))
+                self.lb.add(row)
+        self.lb.show_all()
+    
+    def on_search(self, w): self.populate(w.get_text())
+    def on_activate(self, w):
+        r = self.lb.get_selected_row()
+        if r: self.launch(r.exe)
+    def on_row(self, lb, row): self.launch(row.exe)
+    def launch(self, cmd):
+        subprocess.Popen([cmd])
+        self.close()
+
+def main():
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == "launcher":
+        Launcher(); Gtk.main()
+    else:
+        Panel(); Gtk.main()
+
+if __name__ == "__main__":
+    main()
+PANELEOF
+    chmod 755 /usr/local/bin/novatos-panel.py
+fi
+
+# ═══════════════════════════════════════════════════════════════
+# LAUNCHER WRAPPER
+# ═══════════════════════════════════════════════════════════════
+cat > /usr/local/bin/novatos-launcher <<'EOF'
+#!/bin/bash
+exec python3 /usr/local/bin/novatos-panel.py launcher
+EOF
+chmod 755 /usr/local/bin/novatos-launcher
+
+# ═══════════════════════════════════════════════════════════════
+# COMPTON CONFIG
 # ═══════════════════════════════════════════════════════════════
 mkdir -p /etc/novatos
-cat > /etc/novatos/polybar.ini <<'EOF'
-[colors]
-background = #0F1117
-background-alt = #161922
-foreground = #FFFFFF
-foreground-alt = #9DB7E0
-primary = #4CC2FF
-secondary = #7C5CFF
-alert = #FF6B6B
-success = #78D278
-
-[bar/main]
-width = 100%
-height = 44pt
-radius = 0
-background = ${colors.background}
-foreground = ${colors.foreground}
-line-size = 2
-border-size = 0
-padding-left = 8
-padding-right = 8
-module-margin-left = 4
-module-margin-right = 4
-font-0 = "Noto Sans:size=10;2"
-font-1 = "Noto Sans:size=12;3"
-modules-left = novatos-menu workspaces
-modules-center = window-title
-modules-right = pulseaudio memory cpu network-bluetooth battery date power
-enable-ipc = true
-clickareas = 10
-
-[module/novatos-menu]
-type = custom/text
-content = "  Start  "
-content-foreground = ${colors.primary}
-content-background = ${colors.background-alt}
-content-padding = 2
-click-left = rofi -show drun -config /etc/novatos/rofi.rasi &
-content-font = 2
-
-[module/workspaces]
-type = internal/xworkspaces
-pin-workspaces = true
-enable-click = true
-enable-scroll = false
-format = <label-state>
-label-active = " %name% "
-label-active-foreground = ${colors.primary}
-label-active-background = ${colors.background-alt}
-label-occupied = " %name% "
-label-occupied-foreground = ${colors.foreground-alt}
-label-urgent = " %name% "
-label-urgent-foreground = ${colors.alert}
-label-empty = " %name% "
-label-empty-foreground = ${colors.foreground-alt}
-
-[module/window-title]
-type = internal/xwindow
-format = <label>
-format-foreground = ${colors.foreground-alt}
-label-maxlen = 50
-
-[module/pulseaudio]
-type = internal/pulseaudio
-format-volume = <ramp-volume> <label-volume>
-format-volume-foreground = ${colors.foreground-alt}
-label-volume = %percentage%%
-ramp-volume-0 = "♪"
-ramp-volume-1 = "♪"
-ramp-volume-2 = "♪"
-ramp-volume-foreground = ${colors.primary}
-format-muted = "✕ muted"
-format-muted-foreground = ${colors.alert}
-click-left = pavucontrol &
-
-[module/memory]
-type = internal/memory
-interval = 5
-format = "RAM <label>"
-format-foreground = ${colors.foreground-alt}
-label = %percentage_used%%
-
-[module/cpu]
-type = internal/cpu
-interval = 5
-format = "CPU <label>"
-format-foreground = ${colors.foreground-alt}
-label = %percentage%%
-
-[module/network-bluetooth]
-type = custom/text
-content = "NET"
-content-foreground = ${colors.primary}
-click-left = nm-connection-editor &
-
-[module/battery]
-type = internal/battery
-full-at = 99
-low-at = 15
-format-charging = "<ramp-capacity> <label-charging>"
-format-charging-foreground = ${colors.primary}
-format-discharging = "<ramp-capacity> <label-discharging>"
-format-discharging-foreground = ${colors.foreground-alt}
-format-full = "<ramp-capacity> Full"
-format-full-foreground = ${colors.success}
-ramp-capacity-0 = "BAT"
-ramp-capacity-1 = "BAT"
-ramp-capacity-2 = "BAT"
-ramp-capacity-3 = "BAT"
-ramp-capacity-4 = "BAT"
-label-charging = %percentage%%
-label-discharging = %percentage%%
-
-[module/date]
-type = internal/date
-interval = 1.0
-date = "%H:%M"
-date-alt = "%a %d %b %H:%M"
-format = "<label>"
-format-foreground = ${colors.primary}
-format-background = ${colors.background-alt}
-format-padding = 2
-label = %date%
-click-left = rofi -show calendar -config /etc/novatos/rofi.rasi &
-
-[module/power]
-type = custom/text
-content = "⏻"
-content-foreground = ${colors.alert}
-content-font = 2
-click-left = rofi -show power-menu -config /etc/novatos/rofi-power.rasi &
-EOF
-
-# ═══════════════════════════════════════════════════════════════
-# ROFI CONFIG — Start menu / app launcher
-# ═══════════════════════════════════════════════════════════════
-cat > /etc/novatos/rofi.rasi <<'EOF'
-configuration {
-    modi: "drun";
-    font: "Noto Sans 12";
-    show-icons: true;
-    icon-theme: "Papirus";
-    drun-display-format: "{name}";
-    window-format: "{w}  ({c})  —  {t}";
-    scrolling-method: 1;
-}
-
-@theme "/dev/null"
-
-window {
-    width: 500px;
-    background-color: #0F1117EE;
-    border: 1px solid #4CC2FF44;
-    border-radius: 16px;
-    padding: 16px;
-}
-
-entry {
-    placeholder: "Search applications...";
-    placeholder-color: #9DB7E0;
-    text-color: #FFFFFF;
-    background-color: #161922;
-    border: 2px solid #2A2F3D;
-    border-radius: 10px;
-    padding: 12px;
-}
-
-listview {
-    lines: 8;
-    scrollbar: false;
-}
-
-element {
-    padding: 8px 12px;
-    border-radius: 8px;
-    text-color: #FFFFFF;
-}
-
-element selected {
-    background-color: #4CC2FF22;
-    text-color: #4CC2FF;
-}
-
-element-icon {
-    size: 24px;
-    margin: 0 8px 0 0;
-}
-EOF
-
-# Power menu rofi
-cat > /etc/novatos/rofi-power.rasi <<'EOF'
-configuration {
-    font: "Noto Sans 14";
-    show-icons: false;
-}
-
-@theme "/dev/null"
-
-window {
-    width: 300px;
-    background-color: #0F1117EE;
-    border: 1px solid #FF6B6B44;
-    border-radius: 16px;
-    padding: 16px;
-}
-
-entry {
-    text-color: #FFFFFF;
-    padding: 8px;
-}
-
-listview { lines: 4; scrollbar: false; }
-
-element {
-    padding: 12px;
-    border-radius: 8px;
-    text-color: #FFFFFF;
-}
-
-element selected {
-    background-color: #FF6B6B22;
-    text-color: #FF6B6B;
-}
-EOF
-
-# ═══════════════════════════════════════════════════════════════
-# COMPTON CONFIG — transparency + shadows
-# ═══════════════════════════════════════════════════════════════
 cat > /etc/novatos/compton.conf <<'EOF'
 backend = "xrender"
 vsync = true
@@ -358,33 +315,25 @@ shadow-radius = 12
 shadow-offset-x = -4
 shadow-offset-y = -4
 shadow-opacity = 0.4
-shadow-exclude = [
-    "name = 'Polybar'",
-    "class_g = 'slop'",
-    "_GTK_FRAME_EXTENTS@:c"
-]
+shadow-exclude = [ "name = 'NovatOS Panel'", "_GTK_FRAME_EXTENTS@:c" ]
 fading = true
 fade-in-step = 0.06
 fade-out-step = 0.06
 frame-opacity = 0.9
 inactive-opacity = 0.95
 inactive-opacity-override = false
-focus-exclude = [
-    "class_g = 'Rofi'",
-    "class_g = 'Dmenu'"
-]
+focus-exclude = [ "class_g = 'NovatOS Launcher'" ]
 EOF
 
 # ═══════════════════════════════════════════════════════════════
-# DUNST CONFIG — notifications
+# DUNST CONFIG
 # ═══════════════════════════════════════════════════════════════
 cat > /etc/novatos/dunstrc <<'EOF'
 [global]
     monitor = 0
     follow = keyboard
     width = 360
-    height = 80
-    offset = 20x20
+    offset = 20x60
     origin = top-right
     corner-radius = 12
     font = Noto Sans 12
@@ -410,7 +359,7 @@ cat > /etc/novatos/dunstrc <<'EOF'
 EOF
 
 # ═══════════════════════════════════════════════════════════════
-# OPENBOX CONFIG — window manager
+# OPENBOX CONFIG
 # ═══════════════════════════════════════════════════════════════
 cat > /etc/novatos/openbox-rc.xml <<'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -434,17 +383,15 @@ cat > /etc/novatos/openbox-rc.xml <<'EOF'
     <popupTime>500</popupTime>
   </desktops>
   <keyboard>
-    <keybind key="Super_L"><action name="Execute"><command>rofi -show drun -config /etc/novatos/rofi.rasi</command></action></keybind>
-    <keybind key="Super_R"><action name="Execute"><command>rofi -show drun -config /etc/novatos/rofi.rasi</command></action></keybind>
+    <keybind key="Super_L"><action name="Execute"><command>novatos-launcher</command></action></keybind>
+    <keybind key="Super_R"><action name="Execute"><command>novatos-launcher</command></action></keybind>
     <keybind key="C-A-t"><action name="Execute"><command>lxterminal</command></action></keybind>
-    <keybind key="W-e"><action name="Execute"><command>thunar</command></action></keybind>
+    <keybind key="W-e"><action name="Execute"><command>pcmanfm</command></action></keybind>
     <keybind key="W-f"><action name="ToggleFullscreen"/></keybind>
     <keybind key="W-l"><action name="Execute"><command>systemctl suspend</command></action></keybind>
     <keybind key="A-F4"><action name="Close"/></keybind>
     <keybind key="C-A-Left"><action name="DesktopLeft"/></keybind>
     <keybind key="C-A-Right"><action name="DesktopRight"/></keybind>
-    <keybind key="W-1"><action name="Desktop"><desktop>1</desktop></action></keybind>
-    <keybind key="W-2"><action name="Desktop"><desktop>2</desktop></action></keybind>
     <keybind key="W-d"><action name="ToggleShowDesktop"/></keybind>
   </keyboard>
   <mouse>
@@ -464,14 +411,12 @@ cat > /etc/novatos/openbox-rc.xml <<'EOF'
 EOF
 
 # ═══════════════════════════════════════════════════════════════
-# WALLPAPER (generated via ImageMagick)
+# WALLPAPER
 # ═══════════════════════════════════════════════════════════════
 mkdir -p /usr/share/novatos/wallpapers
 if [ ! -f /usr/share/novatos/wallpapers/aurora.png ]; then
     if command -v convert >/dev/null 2>&1; then
-        convert -size 1920x1080 \
-            \( gradient:'#0A0C12'-'#0F1117' \) \
-            \( -size 1920x1080 radial-gradient:'#4CC2FF22'-'transparent' -gravity center -extent 800x600 \) -compose over -composite \
+        convert -size 1920x1080 gradient:'#0A0C12'-'#0F1117' \
             -gravity center -fill '#4CC2FF' -font Noto-Sans-Bold -pointsize 80 -annotate +0-30 'NovatOS' \
             -fill '#9DB7E0' -font Noto-Sans -pointsize 24 -annotate +0+40 'Aurora Edition 2026' \
             /usr/share/novatos/wallpapers/aurora.png 2>/dev/null || true
@@ -479,7 +424,40 @@ if [ ! -f /usr/share/novatos/wallpapers/aurora.png ]; then
 fi
 
 # ═══════════════════════════════════════════════════════════════
-# INSTALLER SCRIPT
+# LIGHTDM CONFIG — auto-login, no password
+# ═══════════════════════════════════════════════════════════════
+mkdir -p /etc/lightdm
+cat > /etc/lightdm/lightdm.conf <<'EOF'
+[Seat:*]
+autologin-user=novatos
+autologin-user-timeout=0
+autologin-session=novatos
+user-session=novatos
+greeter-session=lightdm-gtk-greeter
+allow-guest=false
+EOF
+
+# LightDM GTK greeter config
+mkdir -p /etc/lightdm
+cat > /etc/lightdm/lightdm-gtk-greeter.conf <<'EOF'
+[greeter]
+theme-name = Adwaita-dark
+icon-theme-name = Papirus
+font-name = Noto Sans 12
+background = /usr/share/novatos/wallpapers/aurora.png
+EOF
+
+# Allow passwordless autologin via PAM
+cat > /etc/pam.d/lightdm-autologin <<'EOF'
+auth    sufficient pam_succeed_if.so user = novatos
+auth    required pam_permit.so
+account include lightdm
+password include lightdm
+session include lightdm
+EOF
+
+# ═══════════════════════════════════════════════════════════════
+# INSTALLER + DESKTOP SHORTCUTS
 # ═══════════════════════════════════════════════════════════════
 cat > /usr/local/bin/novatos-installer <<'EOF'
 #!/bin/bash
@@ -489,7 +467,7 @@ if [ -z "$DISPLAY" ] && [ -z "$WAYLAND_DISPLAY" ]; then
     echo ""
     echo "  ================================"
     echo "    NovatOS Installer (TTY Mode)"
-    echo "  ================================"
+    echo "  ==============================="
     echo ""
     exec calamares 2>/dev/null || exec debian-installer-launcher 2>/dev/null || exec bash
 fi
@@ -500,99 +478,42 @@ exec lxterminal -e bash -c "echo 'Installer not available' && bash"
 EOF
 chmod 755 /usr/local/bin/novatos-installer
 
-# Make installer Python script executable if it exists
 if [ -f /usr/local/bin/novatos_installer.py ]; then
     chmod 755 /usr/local/bin/novatos_installer.py
 fi
 
-# ═══════════════════════════════════════════════════════════════
-# SDDM CONFIG — auto-login, no password
-# ═══════════════════════════════════════════════════════════════
-mkdir -p /etc/sddm.conf.d
-cat > /etc/sddm.conf.d/00-novatos.conf <<'EOF'
-[Autologin]
-User=novatos
-Session=novatos
-
-[Theme]
-Current=
-
-[Users]
-SkipPassword=true
-RememberLastUser=true
-RememberLastSession=true
-
-[X11]
-EnableHiDPI=true
-ServerArguments=-nolisten tcp
-SessionDir=/usr/share/xsessions
-EOF
-
-cat > /etc/pam.d/sddm-autologin <<'EOF'
-auth       sufficient   pam_succeed_if.so user = novatos
-auth       required     pam_permit.so
-account    include      sddm
-password   include      sddm
-session    include      sddm
-EOF
-
-# ═══════════════════════════════════════════════════════════════
-# DESKTOP SHORTCUTS
-# ═══════════════════════════════════════════════════════════════
 NOVATOS_HOME="/home/novatos"
 mkdir -p "$NOVATOS_HOME/Desktop"
 
-cat > "$NOVATOS_HOME/Desktop/install-novatos.desktop" <<'EOF'
+for desktop_file in \
+    "install-novatos.desktop:Install NovatOS:sudo novatos-installer:system-installer" \
+    "app-store.desktop:App Store:gnome-software:system-software-install" \
+    "terminal.desktop:Terminal:lxterminal:terminal" \
+    "files.desktop:Files:pcmanfm:file-manager"; do
+    
+    filename="${desktop_file%%:*}"
+    remainder="${desktop_file#*:}"
+    name="${remainder%%:*}"
+    remainder="${remainder#*:}"
+    exec_cmd="${remainder%%:*}"
+    icon="${remainder#*:}"
+    
+    cat > "$NOVATOS_HOME/Desktop/$filename" <<EOF
 [Desktop Entry]
-Name=Install NovatOS
-Comment=Permanently install NovatOS to your hard drive
-Exec=sudo novatos-installer
-Icon=system-installer
+Name=$name
+Exec=$exec_cmd
+Icon=$icon
 Terminal=false
 Type=Application
 Categories=System;
 EOF
-chmod 755 "$NOVATOS_HOME/Desktop/install-novatos.desktop"
+    chmod 755 "$NOVATOS_HOME/Desktop/$filename"
+done
 
-cat > "$NOVATOS_HOME/Desktop/app-store.desktop" <<'EOF'
-[Desktop Entry]
-Name=App Store
-Comment=Install applications
-Exec=gnome-software
-Icon=system-software-install
-Terminal=false
-Type=Application
-Categories=System;
-EOF
-chmod 755 "$NOVATOS_HOME/Desktop/app-store.desktop"
-
-cat > "$NOVATOS_HOME/Desktop/terminal.desktop" <<'EOF'
-[Desktop Entry]
-Name=Terminal
-Exec=lxterminal
-Icon=terminal
-Terminal=false
-Type=Application
-Categories=System;
-EOF
-chmod 755 "$NOVATOS_HOME/Desktop/terminal.desktop"
-
-cat > "$NOVATOS_HOME/Desktop/file-manager.desktop" <<'EOF'
-[Desktop Entry]
-Name=Files
-Exec=thunar
-Icon=file-manager
-Terminal=false
-Type=Application
-Categories=System;
-EOF
-chmod 755 "$NOVATOS_HOME/Desktop/file-manager.desktop"
-
-# ─── Set ownership ───
 chown -R novatos:novatos "$NOVATOS_HOME"
 
 # ═══════════════════════════════════════════════════════════════
-# POLKIT + NETWORK + GRUB
+# POLKIT + NETWORK + GRUB + CLEANUP
 # ═══════════════════════════════════════════════════════════════
 mkdir -p /etc/polkit-1/rules.d
 cat > /etc/polkit-1/rules.d/10-novatos.rules <<'EOF'
@@ -622,24 +543,22 @@ GRUB_GFXPAYLOAD_LINUX=keep
 GRUB_DISABLE_RECOVERY=true
 EOF
 
-# ═══════════════════════════════════════════════════════════════
-# CLEANUP + VERIFY
-# ═══════════════════════════════════════════════════════════════
 rm -f /var/cache/apt/archives/*.deb 2>/dev/null || true
 apt-get clean 2>/dev/null || true
 
 echo "==> [NovatOS] Verifying critical files..."
-ls -la /usr/local/bin/novatos-desktop
+ls -la /usr/local/bin/novatos-session
+ls -la /usr/local/bin/novatos-panel.py
+ls -la /usr/local/bin/novatos-launcher
 ls -la /usr/local/bin/novatos-installer
 ls -la /usr/share/xsessions/novatos.desktop
-ls -la /etc/novatos/polybar.ini
-ls -la /etc/novatos/rofi.rasi
-ls -la /etc/novatos/compton.conf
+ls -la /etc/lightdm/lightdm.conf
 echo "==> [NovatOS] All files verified. Post-install done."
 
 cat > /etc/novatos-release <<'EOF'
 NovatOS 2026 "Aurora" (Debian 12 Bookworm)
-Desktop: NovatOS Custom (openbox + polybar + rofi)
+Desktop: NovatOS Custom (openbox + Python/GTK3 panel)
+Login: LightDM
 Homepage: https://github.com/salom600/NovatOS
 EOF
 ln -sf /etc/novatos-release /etc/os-release
